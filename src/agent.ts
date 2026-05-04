@@ -21,7 +21,8 @@ const TOOLS: Anthropic.Tool[] = [
       type: "object" as const,
       properties: {
         data_consulta: { type: "string", description: "Data no formato YYYY-MM-DD" },
-        profissional_id: { type: "string", description: "ID do profissional (opcional)" },
+        profissional_id: { type: "string", description: "UUID do profissional (opcional)" },
+        profissional_nome: { type: "string", description: "Nome do profissional (opcional, alternativa ao ID)" },
       },
       required: ["data_consulta"],
     },
@@ -376,7 +377,11 @@ async function executeTool(
     case "consultar-horarios":
       return callFunction("ai-agent-appointments", {
         ...base,
-        data: { data_consulta: input.data_consulta, profissional_id: input.profissional_id },
+        data: {
+          data_consulta: input.data_consulta,
+          profissional_id: input.profissional_id,
+          profissional_nome: input.profissional_nome,
+        },
       });
 
     case "consultar-agendamentos":
@@ -386,7 +391,7 @@ async function executeTool(
       });
 
     case "agendar-rapido":
-      return callFunction("ai-agent-appointments", { ...base, data: input });
+      return callFunction("ai-agent-appointments", { ...base, action: "criar-agendamento", data: input });
 
     case "editar-agendamento": {
       const { appointment_id, ...rest } = input;
@@ -406,7 +411,7 @@ async function executeTool(
     case "consultar-fichas":
       return callFunction("ai-agent-appointments", {
         ...base,
-        cliente_whatsapp: clienteWhatsapp,
+        data: { cliente_whatsapp: clienteWhatsapp },
       });
 
     default:
