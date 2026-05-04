@@ -1,4 +1,3 @@
-import "dotenv/config";
 import Fastify from "fastify";
 import { processMessage } from "./processor";
 
