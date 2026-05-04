@@ -33,6 +33,8 @@ const GREETING_CONFIG: Record<string, { imageUrl?: string; caption: string }> = 
       "Opá, beleza? Sou Roboaldo, assistente virtual da Rabiscando Barber 🤖\nDe preferência faça o agendamento pela nossa página:\nhttps://app.appbarberzap.com.br/b/rabiscandobarber\nMas se quiser pode falar comigo!",
   },
   teste02: {
+    imageUrl:
+      "https://xfvhrnydfeyjnsskpnkj.supabase.co/storage/v1/object/public/booking-assets/a59dbcb6-bbce-466d-ab68-fd70e6eb5da8/logo/1770747474138.jpg",
     caption:
       "Opá, beleza? Sou Roboaldo, assistente virtual da Rabiscando Barber 🤖\nDe preferência faça o agendamento pela nossa página:\nhttps://app.appbarberzap.com.br/b/rabiscandobarber\nMas se quiser pode falar comigo!",
   },
