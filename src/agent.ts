@@ -391,7 +391,7 @@ async function executeTool(
       });
 
     case "agendar-rapido":
-      return callFunction("ai-agent-appointments", { ...base, action: "criar-agendamento", data: input });
+      return callFunction("ai-agent-appointments", { ...base, data: input });
 
     case "editar-agendamento": {
       const { appointment_id, ...rest } = input;
