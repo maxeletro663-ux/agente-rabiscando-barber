@@ -24,13 +24,17 @@ const HISTORY_MAX = 20; // max message pairs to keep
 // Instance that uses TTS audio responses
 const TTS_INSTANCES = new Set(["bela"]);
 
-// Greeting config per instance
-const GREETING_CONFIG: Record<string, { imageUrl: string; caption: string }> = {
+// Greeting config per instance — imageUrl optional
+const GREETING_CONFIG: Record<string, { imageUrl?: string; caption: string }> = {
   rabiscandobarber: {
     imageUrl:
-      "https://xfvhrnydfeyjnsskpnkj.supabase.co/storage/v1/object/public/booking-assets/a59dbcb6-bbce-466d-ab68-fd70e6eb5da8/logo/1770747474138.jpg",
+      "https://rhdkerccjbhjeylemlsw.supabase.co/storage/v1/object/public/booking-assets/logo/rabiscando.jpg",
     caption:
-      "Opá, beleza? Sou Roboaldo assistente virtual da Rabiscando Barber 🤖\nDe preferência faça o agendamento pela nossa página:\nhttps://app.appbarberzap.com.br/b/rabiscandobarber\nMas se quiser pode falar comigo!",
+      "Opá, beleza? Sou Roboaldo, assistente virtual da Rabiscando Barber 🤖\nDe preferência faça o agendamento pela nossa página:\nhttps://app.appbarberzap.com.br/b/rabiscandobarber\nMas se quiser pode falar comigo!",
+  },
+  teste02: {
+    caption:
+      "Opá, beleza? Sou Roboaldo, assistente virtual da Rabiscando Barber 🤖\nDe preferência faça o agendamento pela nossa página:\nhttps://app.appbarberzap.com.br/b/rabiscandobarber\nMas se quiser pode falar comigo!",
   },
 };
 
@@ -184,7 +188,11 @@ export async function processMessage(payload: {
     if (!greetingSent) {
       const greeting = GREETING_CONFIG[instance];
       if (greeting) {
-        await sendImage(instance, jid, greeting.imageUrl, greeting.caption);
+        if (greeting.imageUrl) {
+          await sendImage(instance, jid, greeting.imageUrl, greeting.caption);
+        } else {
+          await sendText(instance, jid, greeting.caption);
+        }
       }
       await markGreetingSent(jid);
     }
