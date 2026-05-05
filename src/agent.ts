@@ -59,6 +59,23 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "agendar-para-terceiro",
+    description: "Cria agendamento para outra pessoa em nome de um assinante. Usa o mesmo fluxo de confirmação que agendar-rapido.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        servico_nome: { type: "string", description: "Nome exato do serviço" },
+        data: { type: "string", description: "Data no formato YYYY-MM-DD" },
+        hora: { type: "string", description: "Hora no formato HH:MM" },
+        cliente_nome: { type: "string", description: "Nome da pessoa que vai ser atendida" },
+        cliente_whatsapp: { type: "string", description: "WhatsApp do assinante que está solicitando" },
+        profissional_nome: { type: "string" },
+        observacoes: { type: "string", description: "Ex: Agendamento para: filho João (solicitado pelo assinante Maria)" },
+      },
+      required: ["servico_nome", "data", "hora", "cliente_nome", "cliente_whatsapp", "observacoes"],
+    },
+  },
+  {
     name: "editar-agendamento",
     description: "Edita um agendamento existente. Requer appointment_id obtido via consultar-agendamentos.",
     input_schema: {
@@ -247,7 +264,7 @@ SE assinante ativo quiser agendar PARA SI MESMO:
 SE assinante ativo quiser agendar PARA OUTRA PESSOA (filho, esposa, familiar etc.):
 → Pode agendar normalmente pelo chat
 → Pergunte o nome de quem vai ser atendido (se ainda não informou)
-→ Ao chamar agendar-rapido:
+→ Use a tool agendar-para-terceiro (NÃO agendar-rapido):
    - cliente_nome = nome da pessoa que vai ser atendida
    - cliente_whatsapp = WhatsApp do assinante (para manter vínculo com a conta)
    - observacoes = "Agendamento para: [nome da pessoa] (solicitado pelo assinante [nome do assinante])"
@@ -408,6 +425,9 @@ async function executeTool(
 
     case "agendar-rapido":
       return callFunction("ai-agent-appointments", { ...base, data: input });
+
+    case "agendar-para-terceiro":
+      return callFunction("ai-agent-appointments", { ...base, action: "criar-agendamento", data: input });
 
     case "editar-agendamento": {
       const { appointment_id, ...rest } = input;
