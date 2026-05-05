@@ -62,6 +62,7 @@ export async function getMediaBase64(instance: string, messageId: string, jid: s
   });
   // Evolution API pode retornar { base64: "..." } ou { data: { base64: "..." } }
   const data = res.data as Record<string, unknown>;
-  const base64 = (data?.base64 || data?.data?.base64 || null) as string | null;
+  const nested = data?.data as Record<string, unknown> | undefined;
+  const base64 = (data?.base64 || nested?.base64 || null) as string | null;
   return { base64 };
 }
