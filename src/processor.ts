@@ -55,15 +55,11 @@ function getHistory(jid: string): Anthropic.MessageParam[] {
   return entry.msgs;
 }
 
-function saveHistory(jid: string, userText: string, assistantText: string) {
+function saveHistory(jid: string, newMessages: Anthropic.MessageParam[]) {
   const existing = getHistory(jid);
-  const updated = [
-    ...existing,
-    { role: "user" as const, content: userText },
-    { role: "assistant" as const, content: assistantText },
-  ];
-  // Keep last HISTORY_MAX pairs
-  const trimmed = updated.slice(-HISTORY_MAX * 2);
+  const updated = [...existing, ...newMessages];
+  // Keep last HISTORY_MAX * 2 mensagens (cada turno pode ter várias mensagens com tool calls)
+  const trimmed = updated.slice(-HISTORY_MAX * 4);
   historyStore.set(jid, { msgs: trimmed, lastAt: Date.now() });
 }
 
@@ -211,7 +207,7 @@ export async function processMessage(payload: {
     const history = getHistory(jid);
     const combinedText = messages.join("\n");
 
-    const agentResponse = await runAgent({
+    const { text: agentResponse, newMessages } = await runAgent({
       messages,
       history,
       userId: userInfo.user_id,
@@ -223,8 +219,8 @@ export async function processMessage(payload: {
 
     if (!agentResponse) return;
 
-    // Save to history
-    saveHistory(jid, combinedText, agentResponse);
+    // Salva histórico completo (inclui tool calls/results para manter appointment_id entre turnos)
+    saveHistory(jid, newMessages);
 
     // Send response
     const useTts = TTS_INSTANCES.has(instance);

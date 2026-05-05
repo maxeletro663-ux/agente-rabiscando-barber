@@ -431,7 +431,7 @@ export async function runAgent(params: {
   clienteNome: string;
   context: Record<string, unknown>;
   userInfo: Record<string, unknown>;
-}): Promise<string> {
+}): Promise<{ text: string; newMessages: Anthropic.MessageParam[] }> {
   const { messages, history, userId, clienteWhatsapp, context, userInfo } = params;
 
   const userText = messages.join("\n");
@@ -488,6 +488,14 @@ export async function runAgent(params: {
     });
   }
 
+  // Adiciona a resposta final do assistente ao histórico completo
+  conversationMessages.push({ role: "assistant", content: response.content });
+
   const textBlock = response.content.find((b) => b.type === "text");
-  return textBlock ? (textBlock as Anthropic.TextBlock).text : "";
+  const text = textBlock ? (textBlock as Anthropic.TextBlock).text : "";
+
+  // Retorna o texto e todas as mensagens do turno atual (sem o histórico anterior)
+  const newMessages = conversationMessages.slice(history.length);
+
+  return { text, newMessages };
 }
