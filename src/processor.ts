@@ -73,6 +73,12 @@ function saveHistory(jid: string, newMessages: Anthropic.MessageParam[]) {
   historyStore.set(jid, { msgs: trimmed, lastAt: Date.now() });
 }
 
+function cleanMarkdown(text: string): string {
+  // Remove ** ao redor de URLs para não quebrar links no WhatsApp
+  return text.replace(/\*\*(https?:\/\/[^\s*]+)\*\*/g, "$1")
+             .replace(/\*(https?:\/\/[^\s*]+)\*/g, "$1");
+}
+
 function splitResponse(text: string, limit = 250): string[] {
   const paragraphs = text.split(/\n\s*\n/).map((t) => t.trim()).filter(Boolean);
   if (paragraphs.length > 1) return paragraphs;
@@ -249,7 +255,7 @@ export async function processMessage(payload: {
 
     // Send response
     const useTts = TTS_INSTANCES.has(instance);
-    const blocks = splitResponse(agentResponse);
+    const blocks = splitResponse(cleanMarkdown(agentResponse));
     await sendResponseBlocks(instance, jid, blocks, useTts);
   } finally {
     releaseLock(jid);

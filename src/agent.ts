@@ -230,6 +230,7 @@ ${profissionais}
 - Use 1-2 emojis por mensagem
 - Nunca use listas numeradas nas respostas ao cliente
 - Nunca envie UUIDs ou IDs internos
+- NUNCA use markdown (**, *, _, ~) em URLs ou links — escreva os links sempre como texto puro
 </tom_de_voz>
 
 <regras_assinantes>
