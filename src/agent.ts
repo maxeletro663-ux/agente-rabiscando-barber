@@ -43,17 +43,17 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "agendar-rapido",
-    description: "Cria um agendamento após confirmação explícita do cliente.",
+    description: "Cria agendamento para o PRÓPRIO cliente (titular). ⛔ PROIBIDO usar quando o assinante está agendando para outra pessoa (filho, esposa, familiar) — nesses casos use OBRIGATORIAMENTE agendar-para-terceiro.",
     input_schema: {
       type: "object" as const,
       properties: {
         servico_nome: { type: "string", description: "Nome exato do serviço" },
         data: { type: "string", description: "Data no formato YYYY-MM-DD" },
         hora: { type: "string", description: "Hora no formato HH:MM" },
-        cliente_nome: { type: "string", description: "Nome de quem vai ser atendido" },
-        cliente_whatsapp: { type: "string", description: "WhatsApp de quem solicita o agendamento" },
+        cliente_nome: { type: "string", description: "Nome de quem vai ser atendido — deve ser o próprio cliente" },
+        cliente_whatsapp: { type: "string", description: "WhatsApp do próprio cliente" },
         profissional_nome: { type: "string" },
-        observacoes: { type: "string", description: "Observação opcional, ex: 'Agendamento para: filho João (solicitado por assinante Maria)'" },
+        observacoes: { type: "string", description: "Observação opcional" },
       },
       required: ["servico_nome", "data", "hora", "cliente_nome", "cliente_whatsapp"],
     },
@@ -256,17 +256,20 @@ ${profissionais}
 Sempre que o cliente demonstrar interesse em agendar (ex: "quero cortar", "tem horário", "quero marcar", "quando tem vaga" etc.), verifique IMEDIATAMENTE o bloco <assinatura> acima antes de responder sobre horários ou serviços.
 
 ━━━ CASO 1: assinante = true E status_assinatura = ativo ━━━
+→ Primeiro identifique: o agendamento é para o PRÓPRIO assinante ou para OUTRA PESSOA?
+
+SE FOR PARA O PRÓPRIO ASSINANTE:
 → NÃO prossiga com agendamento manual
-→ Informe que o agendamento de assinantes é feito pela página exclusiva
 → Diga: "Como assinante, é só acessar ${String((barbearia as { booking_url?: string }).booking_url || "")}, clicar em *Serviço Assinantes*, colocar seu número e escolher a data e horário 😊"
-→ EXCEÇÃO: se o cliente quiser agendar para OUTRA PESSOA (filho, familiar etc.):
-   - É agendamento AVULSO — preço normal, SEM consumir ficha
-   - Pergunte o nome de quem vai ser atendido e qual a relação (filho, esposa etc.)
-   - Use a tool agendar-para-terceiro com:
-     cliente_nome = nome do ASSINANTE (titular) — use exatamente o valor de cliente.nome do contexto
-     ⚠️ NÃO incluir cliente_whatsapp (evita consumo indevido de ficha)
-     observacoes = "Agendamento para: [nome do familiar] ([relação]) — solicitado pelo assinante [nome_assinante]"
-     Exemplo: observacoes = "Agendamento para: João (filho) — solicitado pelo assinante Alan"
+
+SE FOR PARA OUTRA PESSOA (filho, esposa, familiar, amigo etc.):
+→ É agendamento AVULSO — preço normal, SEM consumir ficha
+→ Pergunte o nome de quem vai ser atendido e qual a relação
+→ Use OBRIGATORIAMENTE a tool **agendar-para-terceiro** (NUNCA agendar-rapido):
+   cliente_nome = nome do ASSINANTE (titular) — valor exato de cliente.nome do contexto
+   ⚠️ NÃO incluir cliente_whatsapp
+   observacoes = "Agendamento para: [nome] ([relação]) — solicitado pelo assinante [nome_assinante]"
+   Exemplo: observacoes = "Agendamento para: João (filho) — solicitado pelo assinante Alan"
 
 ━━━ CASO 2: assinante = true E status_assinatura ≠ ativo (vencida, cancelada etc.) ━━━
 → Informe que a assinatura está vencida/inativa
@@ -299,6 +302,7 @@ NUNCA faça:
 - Usar nome de serviço digitado pelo cliente — sempre use o nome exato dos serviços disponíveis
 - Usar nome de profissional digitado pelo cliente sem verificar antes na seção <profissionais_disponiveis> — se o profissional não existir na lista, informe o cliente imediatamente e apresente os nomes disponíveis
 - Consultar horários ou agendar para um profissional que não está na seção <profissionais_disponiveis>
+- Usar agendar-rapido quando o assinante está agendando para outra pessoa — nesses casos a tool correta é SEMPRE agendar-para-terceiro
 - Criar agendamento manual para assinante ativo
 - Cancelar sem confirmação explícita do cliente
 - Chamar tool com campos vazios, null ou undefined
