@@ -60,19 +60,18 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "agendar-para-terceiro",
-    description: "Cria agendamento para outra pessoa em nome de um assinante. Usa o mesmo fluxo de confirmação que agendar-rapido.",
+    description: "Cria agendamento AVULSO (sem ficha) para outra pessoa a pedido de um assinante. NUNCA passar cliente_whatsapp do assinante para não consumir ficha.",
     input_schema: {
       type: "object" as const,
       properties: {
         servico_nome: { type: "string", description: "Nome exato do serviço" },
         data: { type: "string", description: "Data no formato YYYY-MM-DD" },
         hora: { type: "string", description: "Hora no formato HH:MM" },
-        cliente_nome: { type: "string", description: "Nome da pessoa que vai ser atendida" },
-        cliente_whatsapp: { type: "string", description: "WhatsApp do assinante que está solicitando" },
+        cliente_nome: { type: "string", description: "Nome da pessoa que vai ser atendida (não o assinante)" },
         profissional_nome: { type: "string" },
-        observacoes: { type: "string", description: "Ex: Agendamento para: filho João (solicitado pelo assinante Maria)" },
+        observacoes: { type: "string", description: "Ex: Agendamento para filho do assinante Alan" },
       },
-      required: ["servico_nome", "data", "hora", "cliente_nome", "cliente_whatsapp", "observacoes"],
+      required: ["servico_nome", "data", "hora", "cliente_nome", "observacoes"],
     },
   },
   {
@@ -261,11 +260,12 @@ Sempre que o cliente demonstrar interesse em agendar (ex: "quero cortar", "tem h
 → Informe que o agendamento de assinantes é feito pela página exclusiva
 → Diga: "Como assinante, é só acessar ${String((barbearia as { booking_url?: string }).booking_url || "")}, clicar em *Serviço Assinantes*, colocar seu número e escolher a data e horário 😊"
 → EXCEÇÃO: se o cliente quiser agendar para OUTRA PESSOA (filho, familiar etc.):
+   - É agendamento AVULSO — preço normal, SEM consumir ficha
    - Pergunte o nome de quem vai ser atendido
    - Use a tool agendar-para-terceiro com:
      cliente_nome = nome da pessoa atendida
-     cliente_whatsapp = WhatsApp do assinante
-     observacoes = "Agendamento para: [nome] (solicitado pelo assinante [nome_assinante])"
+     ⚠️ NÃO incluir cliente_whatsapp (evita consumo indevido de ficha)
+     observacoes = "Agendamento para [nome] (solicitado pelo assinante [nome_assinante])"
 
 ━━━ CASO 2: assinante = true E status_assinatura ≠ ativo (vencida, cancelada etc.) ━━━
 → Informe que a assinatura está vencida/inativa
