@@ -9,6 +9,8 @@ export async function transcribeAudio(base64: string): Promise<string> {
   const buffer = Buffer.from(base64, "base64");
   const form = new FormData();
   form.append("file", buffer, { filename: "audio.ogg", contentType: "audio/ogg" });
+  form.append("model_id", "scribe_v1");
+  form.append("language_code", "pt");
 
   const res = await axios.post(
     "https://api.elevenlabs.io/v1/speech-to-text",

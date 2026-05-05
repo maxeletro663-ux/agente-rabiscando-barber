@@ -167,8 +167,12 @@ export async function processMessage(payload: {
         const base64 = media?.data?.base64;
         if (base64) {
           text = await transcribeAudio(base64);
+        } else {
+          console.warn(`[${instance}] Áudio sem base64: messageId=${payload.messageId}`);
+          text = "[Áudio não transcrito]";
         }
-      } catch {
+      } catch (err) {
+        console.error(`[${instance}] Erro ao transcrever áudio:`, err);
         text = "[Áudio não transcrito]";
       }
     }
