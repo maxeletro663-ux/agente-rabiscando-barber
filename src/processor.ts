@@ -40,6 +40,16 @@ const GREETING_CONFIG: Record<string, { imageUrl?: string; caption: string }> = 
   },
 };
 
+// Logo por instância — usado ao enviar o link de agendamento
+const LOGO_URL: Record<string, string> = {
+  rabiscandobarber:
+    "https://rhdkerccjbhjeylemlsw.supabase.co/storage/v1/object/public/booking-assets/logo/rabiscando.jpg",
+  teste02:
+    "https://xfvhrnydfeyjnsskpnkj.supabase.co/storage/v1/object/public/booking-assets/a59dbcb6-bbce-466d-ab68-fd70e6eb5da8/logo/1770747474138.jpg",
+};
+
+const BOOKING_URL_PATTERN = /https:\/\/app\.appbarberzap\.com\.br\/b\/\S+/;
+
 function normalizeJid(jid: string): string {
   return jid.replace("@s.whatsapp.net", "").replace(/\D/g, "").replace(/^55/, "");
 }
@@ -96,6 +106,17 @@ async function sendResponseBlocks(
     const delay = Math.max(1000, Math.round((block.length / cps) * 1000));
     await sendPresence(instance, jid, delay);
     await new Promise((r) => setTimeout(r, delay));
+
+    // Se o bloco contém o link de agendamento, envia como imagem + caption
+    const logoUrl = LOGO_URL[instance];
+    if (logoUrl && BOOKING_URL_PATTERN.test(block)) {
+      try {
+        await sendImage(instance, jid, logoUrl, block);
+        continue;
+      } catch {
+        // fallback para texto se a imagem falhar
+      }
+    }
 
     if (useTts) {
       try {
