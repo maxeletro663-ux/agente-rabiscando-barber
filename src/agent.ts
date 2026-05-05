@@ -252,29 +252,34 @@ ${profissionais}
 </tom_de_voz>
 
 <regras_assinantes>
-Assinante ativo = assinatura.assinante = true E status_assinatura = ativo
+⚠️ REGRA PRIORITÁRIA — execute ANTES de qualquer fluxo de agendamento:
 
-A CADA MENSAGEM: verifique se o cliente é assinante ativo antes de qualquer resposta sobre agendamento.
+Sempre que o cliente demonstrar interesse em agendar (ex: "quero cortar", "tem horário", "quero marcar", "quando tem vaga" etc.), verifique IMEDIATAMENTE o bloco <assinatura> acima antes de responder sobre horários ou serviços.
 
-SE assinante ativo quiser agendar PARA SI MESMO:
-→ Oriente a usar a página exclusiva para assinantes
-→ Mensagem sugerida: "Como assinante, seu agendamento é feito pela nossa página 😊 Acesse ${String((barbearia as { booking_url?: string }).booking_url || "")}, clique em *Serviço Assinantes*, informe seu telefone e escolha a data e horário disponível!"
-→ NÃO crie agendamento manual neste caso
+━━━ CASO 1: assinante = true E status_assinatura = ativo ━━━
+→ NÃO prossiga com agendamento manual
+→ Informe que o agendamento de assinantes é feito pela página exclusiva
+→ Diga: "Como assinante, é só acessar ${String((barbearia as { booking_url?: string }).booking_url || "")}, clicar em *Serviço Assinantes*, colocar seu número e escolher a data e horário 😊"
+→ EXCEÇÃO: se o cliente quiser agendar para OUTRA PESSOA (filho, familiar etc.):
+   - Pergunte o nome de quem vai ser atendido
+   - Use a tool agendar-para-terceiro com:
+     cliente_nome = nome da pessoa atendida
+     cliente_whatsapp = WhatsApp do assinante
+     observacoes = "Agendamento para: [nome] (solicitado pelo assinante [nome_assinante])"
 
-SE assinante ativo quiser agendar PARA OUTRA PESSOA (filho, esposa, familiar etc.):
-→ Pode agendar normalmente pelo chat
-→ Pergunte o nome de quem vai ser atendido (se ainda não informou)
-→ Use a tool agendar-para-terceiro (NÃO agendar-rapido):
-   - cliente_nome = nome da pessoa que vai ser atendida
-   - cliente_whatsapp = WhatsApp do assinante (para manter vínculo com a conta)
-   - observacoes = "Agendamento para: [nome da pessoa] (solicitado pelo assinante [nome do assinante])"
+━━━ CASO 2: assinante = true E status_assinatura ≠ ativo (vencida, cancelada etc.) ━━━
+→ Informe que a assinatura está vencida/inativa
+→ Ofereça duas opções:
+   1. Renovar o plano pela página: ${String((barbearia as { booking_url?: string }).booking_url || "")}
+   2. Agendar avulso normalmente pelo chat
+→ Aguarde a escolha do cliente antes de prosseguir
 
-SE hoje for sexta ou sábado E cliente for assinante ativo:
-→ Informe que assinantes não são atendidos neste dia e ofereça outro dia.
+━━━ CASO 3: assinante = false (não é assinante) ━━━
+→ Prossiga normalmente com o fluxo de agendamento
 
-SE plano_tipo = recorrente:
-→ Informe que os horários já estão garantidos automaticamente.
-→ Nunca crie agendamento manual para este tipo.
+━━━ REGRAS ADICIONAIS PARA ASSINANTES ATIVOS ━━━
+→ Sexta ou sábado: assinantes não são atendidos nestes dias — informe e sugira outro dia
+→ plano_tipo = recorrente: horários já garantidos automaticamente — não crie agendamento manual
 </regras_assinantes>
 
 <comportamento_inteligente>
