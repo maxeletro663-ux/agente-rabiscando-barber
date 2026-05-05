@@ -168,22 +168,27 @@ export async function processMessage(payload: {
 
     // Transcribe audio if needed
     if (messageType === "audioMessage" && payload.messageId) {
-      try {
-        const media = await getMediaBase64(instance, payload.messageId);
-        const base64 = media?.data?.base64;
-        if (base64) {
-          text = await transcribeAudio(base64);
-        } else {
-          console.warn(`[${instance}] Áudio sem base64: messageId=${payload.messageId}`);
-          text = "[Áudio não transcrito]";
+      if (text) {
+        // WhatsApp já enviou transcrição nativa (speechToText) — usa ela diretamente
+        console.log(`[${instance}] Usando speechToText nativo do WhatsApp`);
+      } else {
+        // Sem transcrição nativa — tenta via ElevenLabs
+        try {
+          const media = await getMediaBase64(instance, payload.messageId);
+          const base64 = media?.data?.base64;
+          if (base64) {
+            text = await transcribeAudio(base64);
+            console.log(`[${instance}] Áudio transcrito via ElevenLabs`);
+          } else {
+            console.warn(`[${instance}] Áudio sem base64: messageId=${payload.messageId}`);
+          }
+        } catch (err) {
+          console.error(`[${instance}] Erro ao transcrever áudio via ElevenLabs:`, err);
         }
-      } catch (err) {
-        console.error(`[${instance}] Erro ao transcrever áudio:`, err);
-        text = "[Áudio não transcrito]";
       }
     }
 
-    if (!text && messageType !== "audioMessage") return;
+    if (!text) return;
 
     // Debounce: push message and wait for more
     await pushDebounce(jid, text);
