@@ -50,7 +50,18 @@ export async function sendImage(
   });
 }
 
-export async function getMediaBase64(instance: string, messageId: string) {
-  const res = await api.get(`/chat/getMediaMessage/${instance}/${messageId}`);
-  return res.data as { data?: { base64?: string } };
+export async function getMediaBase64(instance: string, messageId: string, jid: string) {
+  const res = await api.post(`/chat/getBase64FromMediaMessage/${instance}`, {
+    message: {
+      key: {
+        id: messageId,
+        remoteJid: jid,
+        fromMe: false,
+      },
+    },
+  });
+  // Evolution API pode retornar { base64: "..." } ou { data: { base64: "..." } }
+  const data = res.data as Record<string, unknown>;
+  const base64 = (data?.base64 || data?.data?.base64 || null) as string | null;
+  return { base64 };
 }

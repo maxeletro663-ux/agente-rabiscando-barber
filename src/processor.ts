@@ -174,8 +174,8 @@ export async function processMessage(payload: {
       } else {
         // Sem transcrição nativa — tenta via ElevenLabs
         try {
-          const media = await getMediaBase64(instance, payload.messageId);
-          const base64 = media?.data?.base64;
+          const media = await getMediaBase64(instance, payload.messageId, jid);
+          const base64 = media?.base64;
           if (base64) {
             text = await transcribeAudio(base64);
             console.log(`[${instance}] Áudio transcrito via ElevenLabs`);
@@ -183,7 +183,13 @@ export async function processMessage(payload: {
             console.warn(`[${instance}] Áudio sem base64: messageId=${payload.messageId}`);
           }
         } catch (err) {
-          console.error(`[${instance}] Erro ao transcrever áudio via ElevenLabs:`, err);
+          console.error(`[${instance}] Erro ao transcrever áudio:`, err);
+        }
+
+        // Se ainda sem texto, pede para o cliente enviar por escrito
+        if (!text) {
+          await sendText(instance, jid, "Não consegui entender o áudio 😅 Pode mandar por texto?");
+          return;
         }
       }
     }
