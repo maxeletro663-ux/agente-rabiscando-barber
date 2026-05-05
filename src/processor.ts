@@ -8,6 +8,8 @@ import {
   clearDebounceWaiting,
   isGreetingSentToday,
   markGreetingSent,
+  setPausedByHuman,
+  isPausedByHuman,
 } from "./services/redis";
 import { sendText, sendPresence, sendAudio, sendImage, getMediaBase64 } from "./services/evolution";
 import { transcribeAudio, textToSpeech, uploadAudio } from "./services/elevenlabs";
@@ -142,18 +144,35 @@ export async function processMessage(payload: {
   instance: string;
   jid: string;
   fromMe: boolean;
+  source?: string;
   messageType: string;
   text?: string;
   audioBase64?: string;
   messageId?: string;
   pushName?: string;
 }) {
-  const { instance, jid, fromMe, messageType } = payload;
+  const { instance, jid, fromMe, source, messageType } = payload;
 
-  // Ignore groups, self-messages, stickers, reactions, videos
-  if (fromMe) return;
+  // Ignore groups
   if (jid.includes("@g.us")) return;
+
+  // Mensagens enviadas da instância (fromMe)
+  if (fromMe) {
+    // Se não veio via API (operador humano no celular/web) → pausar o bot por 5 min
+    if (source && source !== "api" && !jid.includes("@g.us")) {
+      await setPausedByHuman(jid);
+      console.log(`[${instance}] Intervenção humana detectada (source=${source}) para ${jid} — pausando 5 min`);
+    }
+    return;
+  }
+
   if (["stickerMessage", "reactionMessage", "videoMessage"].includes(messageType)) return;
+
+  // Verificar se o bot está pausado por intervenção humana
+  if (await isPausedByHuman(jid)) {
+    console.log(`[${instance}] Bot pausado por intervenção humana para ${jid}`);
+    return;
+  }
 
   // Acquire processing lock to avoid concurrent execution for same JID
   const locked = await acquireLock(jid);

@@ -25,6 +25,7 @@ app.post("/webhook", async (request, reply) => {
   const messageType = String(data.messageType || "");
   const pushName = String(data.pushName || "");
   const messageId = String(key?.id || "");
+  const source = String(data.source || "");
 
   const text =
     (message?.conversation as string | undefined) ||
@@ -40,6 +41,7 @@ app.post("/webhook", async (request, reply) => {
       instance: String(body.instance),
       jid,
       fromMe,
+      source,
       messageType,
       text,
       messageId,

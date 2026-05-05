@@ -67,9 +67,9 @@ const TOOLS: Anthropic.Tool[] = [
         servico_nome: { type: "string", description: "Nome exato do serviço" },
         data: { type: "string", description: "Data no formato YYYY-MM-DD" },
         hora: { type: "string", description: "Hora no formato HH:MM" },
-        cliente_nome: { type: "string", description: "Nome da pessoa que vai ser atendida (não o assinante)" },
+        cliente_nome: { type: "string", description: "Nome + identificação: ex 'João (via assinante Alan)'" },
         profissional_nome: { type: "string" },
-        observacoes: { type: "string", description: "Ex: Agendamento para filho do assinante Alan" },
+        observacoes: { type: "string", description: "Mesmo valor de cliente_nome para registro" },
       },
       required: ["servico_nome", "data", "hora", "cliente_nome", "observacoes"],
     },
@@ -263,9 +263,9 @@ Sempre que o cliente demonstrar interesse em agendar (ex: "quero cortar", "tem h
    - É agendamento AVULSO — preço normal, SEM consumir ficha
    - Pergunte o nome de quem vai ser atendido
    - Use a tool agendar-para-terceiro com:
-     cliente_nome = nome da pessoa atendida
+     cliente_nome = "[nome da pessoa] (via assinante [nome_assinante])" — ex: "João (via assinante Alan)"
      ⚠️ NÃO incluir cliente_whatsapp (evita consumo indevido de ficha)
-     observacoes = "Agendamento para [nome] (solicitado pelo assinante [nome_assinante])"
+     observacoes = mesmo texto do cliente_nome
 
 ━━━ CASO 2: assinante = true E status_assinatura ≠ ativo (vencida, cancelada etc.) ━━━
 → Informe que a assinatura está vencida/inativa
@@ -296,6 +296,8 @@ NUNCA faça:
 - Confirmar ação sem success: true da tool
 - Exibir UUIDs ou IDs internos ao cliente
 - Usar nome de serviço digitado pelo cliente — sempre use o nome exato dos serviços disponíveis
+- Usar nome de profissional digitado pelo cliente sem verificar antes na seção <profissionais_disponiveis> — se o profissional não existir na lista, informe o cliente imediatamente e apresente os nomes disponíveis
+- Consultar horários ou agendar para um profissional que não está na seção <profissionais_disponiveis>
 - Criar agendamento manual para assinante ativo
 - Cancelar sem confirmação explícita do cliente
 - Chamar tool com campos vazios, null ou undefined
@@ -313,13 +315,15 @@ Nunca chame uma tool sem ter TODOS os campos obrigatórios. Se faltar algo, perg
 
 <tool name="agendar-rapido">
 Fluxo obrigatório antes de chamar:
+0. Se o cliente pediu um profissional específico, verifique IMEDIATAMENTE se o nome existe (mesmo que parcialmente) em <profissionais_disponiveis>. Se não existir → informe que não há esse profissional e liste os disponíveis. NÃO continue o fluxo.
 1. Confirme serviço + data + hora
 2. Use o nome EXATO do serviço da seção servicos_disponiveis
-3. Verifique se o horário existe na seção profissionais_disponiveis
-4. Se o horário não constar → informe e sugira os disponíveis
-5. Exiba resumo: serviço, data, hora, profissional (se informado)
-6. Aguarde confirmação explícita do cliente
-7. Só então chame a tool
+3. Use o nome EXATO do profissional da seção profissionais_disponiveis
+4. Verifique se o horário existe na seção profissionais_disponiveis
+5. Se o horário não constar → informe e sugira os disponíveis
+6. Exiba resumo: serviço, data, hora, profissional (se informado)
+7. Aguarde confirmação explícita do cliente
+8. Só então chame a tool
 
 Respostas: success:true → confirme | SLOT_UNAVAILABLE → sugira alternativas | SERVICE_NOT_FOUND → mostre serviços disponíveis
 </tool>
