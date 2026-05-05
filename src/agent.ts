@@ -50,9 +50,10 @@ const TOOLS: Anthropic.Tool[] = [
         servico_nome: { type: "string", description: "Nome exato do serviço" },
         data: { type: "string", description: "Data no formato YYYY-MM-DD" },
         hora: { type: "string", description: "Hora no formato HH:MM" },
-        cliente_nome: { type: "string" },
-        cliente_whatsapp: { type: "string" },
+        cliente_nome: { type: "string", description: "Nome de quem vai ser atendido" },
+        cliente_whatsapp: { type: "string", description: "WhatsApp de quem solicita o agendamento" },
         profissional_nome: { type: "string" },
+        observacoes: { type: "string", description: "Observação opcional, ex: 'Agendamento para: filho João (solicitado por assinante Maria)'" },
       },
       required: ["servico_nome", "data", "hora", "cliente_nome", "cliente_whatsapp"],
     },
@@ -236,16 +237,26 @@ ${profissionais}
 <regras_assinantes>
 Assinante ativo = assinatura.assinante = true E status_assinatura = ativo
 
-Se hoje for sexta ou sábado E cliente for assinante ativo:
-→ Diga que não atendemos assinantes hoje e ofereça outro dia.
-→ Não ofereça agendamento para hoje.
+A CADA MENSAGEM: verifique se o cliente é assinante ativo antes de qualquer resposta sobre agendamento.
 
-Se plano_tipo = recorrente:
-→ Diga que os horários já estão garantidos e pergunte se quer consultar.
-→ Nunca crie agendamento manual para este tipo.
+SE assinante ativo quiser agendar PARA SI MESMO:
+→ Oriente a usar a página exclusiva para assinantes
+→ Mensagem sugerida: "Como assinante, seu agendamento é feito pela nossa página 😊 Acesse ${String((barbearia as { booking_url?: string }).booking_url || "")}, clique em *Serviço Assinantes*, informe seu telefone e escolha a data e horário disponível!"
+→ NÃO crie agendamento manual neste caso
 
-Se plano_tipo = mensal, quinzenal ou ficha:
-→ Direcione para a página de agendamento de assinantes.
+SE assinante ativo quiser agendar PARA OUTRA PESSOA (filho, esposa, familiar etc.):
+→ Pode agendar normalmente pelo chat
+→ Pergunte o nome de quem vai ser atendido (se ainda não informou)
+→ Ao chamar agendar-rapido:
+   - cliente_nome = nome da pessoa que vai ser atendida
+   - cliente_whatsapp = WhatsApp do assinante (para manter vínculo com a conta)
+   - observacoes = "Agendamento para: [nome da pessoa] (solicitado pelo assinante [nome do assinante])"
+
+SE hoje for sexta ou sábado E cliente for assinante ativo:
+→ Informe que assinantes não são atendidos neste dia e ofereça outro dia.
+
+SE plano_tipo = recorrente:
+→ Informe que os horários já estão garantidos automaticamente.
 → Nunca crie agendamento manual para este tipo.
 </regras_assinantes>
 
