@@ -95,10 +95,12 @@ function buildSystemPrompt(
   ctx: Record<string, unknown>,
   userInfo: Record<string, unknown>
 ): string {
-  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
-  const dateStr = now.toLocaleDateString("pt-BR");
-  const timeStr = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  const weekday = now.toLocaleDateString("pt-BR", { weekday: "long" });
+  const now = new Date();
+  const TZ = "America/Sao_Paulo";
+  const dateStr = now.toLocaleDateString("pt-BR", { timeZone: TZ });
+  const isoDate = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(now); // YYYY-MM-DD
+  const timeStr = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
+  const weekday = now.toLocaleDateString("pt-BR", { weekday: "long", timeZone: TZ });
   const barbearia = (ctx as { barbearia?: Record<string, unknown> }).barbearia || {};
   const cliente = (ctx as { cliente?: Record<string, unknown> }).cliente || {};
   const assinatura = (ctx as { assinatura?: Record<string, unknown> }).assinatura || {};
@@ -134,8 +136,10 @@ Seu único objetivo é ajudar clientes a agendar, consultar, remarcar ou cancela
 </identity>
 
 <datetime>
-Data/Hora atual: ${dateStr} ${timeStr}
+Data atual: ${dateStr} (${isoDate})
+Hora atual: ${timeStr}
 Dia da semana: ${weekday}
+Amanhã: ${new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(now.getTime() + 86400000))}
 </datetime>
 
 <cliente>
