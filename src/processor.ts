@@ -27,6 +27,11 @@ const HISTORY_MAX = 20; // max message pairs to keep
 // (útil para testes sem impactar clientes reais). Remover quando não precisar mais.
 const TEST_ONLY_NUMBER = "5511970916818";
 
+// Alias de instâncias: instâncias de teste apontam para o user_id de outra instância no Supabase
+const INSTANCE_ALIAS: Record<string, string> = {
+  Ativa: "rabiscandobarber",
+};
+
 // Instance that uses TTS audio responses
 const TTS_INSTANCES = new Set(["bela"]);
 
@@ -263,10 +268,11 @@ export async function processMessage(payload: {
       return;
     }
 
-    // Lookup user by instance
-    const userInfo = await getUserByInstance(instance);
+    // Lookup user by instance (resolve alias antes de buscar)
+    const lookupInstance = INSTANCE_ALIAS[instance] ?? instance;
+    const userInfo = await getUserByInstance(lookupInstance);
     if (!userInfo) {
-      console.warn(`[${instance}] Instância não encontrada no sistema`);
+      console.warn(`[${instance}] Instância não encontrada no sistema (lookup: ${lookupInstance})`);
       return;
     }
 
