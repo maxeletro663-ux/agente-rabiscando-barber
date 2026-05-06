@@ -153,6 +153,9 @@ export async function processMessage(payload: {
 }) {
   const { instance, jid, fromMe, source, messageType } = payload;
 
+  // Log diagnóstico para entender o payload de todas as mensagens
+  console.log(`[${instance}] msg: jid=${jid} fromMe=${fromMe} source="${source}" type=${messageType}`);
+
   // Ignore groups
   if (jid.includes("@g.us")) return;
 
