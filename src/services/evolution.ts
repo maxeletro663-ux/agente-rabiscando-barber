@@ -6,7 +6,9 @@ const DEFAULT_KEY = process.env.EVOLUTION_API_KEY!;
 // Keys por instância: EVOLUTION_API_KEY_NOMEDAINSTANCIA (ex: EVOLUTION_API_KEY_ATIVA)
 function getApiKey(instance: string): string {
   const envKey = `EVOLUTION_API_KEY_${instance.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
-  return process.env[envKey] ?? DEFAULT_KEY;
+  const resolved = process.env[envKey] ?? DEFAULT_KEY;
+  console.log(`[evolution] getApiKey(${instance}): envKey=${envKey} found=${!!process.env[envKey]} using=${resolved.slice(0, 8)}...`);
+  return resolved;
 }
 
 function apiFor(instance: string) {
