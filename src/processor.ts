@@ -23,10 +23,6 @@ const historyStore = new Map<string, { msgs: Anthropic.MessageParam[]; lastAt: n
 const DEBOUNCE_WAIT_MS = 6_000;
 const HISTORY_MAX = 20; // max message pairs to keep
 
-// Número de teste: quando definido, o bot só processa mensagens desse número
-// (útil para testes sem impactar clientes reais). Remover quando não precisar mais.
-const TEST_ONLY_NUMBER = "5511970916818";
-
 // Alias de instâncias: instâncias de teste apontam para o user_id de outra instância no Supabase
 const INSTANCE_ALIAS: Record<string, string> = {
   Ativa: "rabiscandobarber",
@@ -180,15 +176,6 @@ export async function processMessage(payload: {
 
   // Ignore groups
   if (jid.includes("@g.us")) return;
-
-  // Filtro de teste: só processa mensagens do número autorizado
-  if (TEST_ONLY_NUMBER) {
-    const rawNumber = jid.replace("@s.whatsapp.net", "").replace(/\D/g, "");
-    if (!fromMe && rawNumber !== TEST_ONLY_NUMBER) {
-      console.log(`[${instance}] Ignorando mensagem de ${rawNumber} (modo teste ativo)`);
-      return;
-    }
-  }
 
   // Mensagens enviadas da instância (fromMe)
   if (fromMe) {

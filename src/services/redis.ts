@@ -68,14 +68,10 @@ export async function markGreetingSent(jid: string): Promise<void> {
 const HUMAN_PAUSE_TTL = 300; // 5 minutos
 
 export async function setPausedByHuman(jid: string): Promise<void> {
-  const key = `pause:human:${jid}`;
-  const result = await redis.set(key, "1", { ex: HUMAN_PAUSE_TTL });
-  console.log(`[redis] setPausedByHuman key=${key} result=${result}`);
+  await redis.set(`pause:human:${jid}`, "1", { ex: HUMAN_PAUSE_TTL });
 }
 
 export async function isPausedByHuman(jid: string): Promise<boolean> {
-  const key = `pause:human:${jid}`;
-  const val = await redis.get(key);
-  console.log(`[redis] isPausedByHuman key=${key} val=${val}`);
+  const val = await redis.get(`pause:human:${jid}`);
   return val !== null && val !== undefined;
 }
