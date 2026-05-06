@@ -1,16 +1,24 @@
 import axios from "axios";
 
 const BASE = process.env.EVOLUTION_API_URL!;
-const KEY = process.env.EVOLUTION_API_KEY!;
+const DEFAULT_KEY = process.env.EVOLUTION_API_KEY!;
 
-const api = axios.create({
-  baseURL: BASE,
-  headers: { apikey: KEY, "Content-Type": "application/json" },
-  timeout: 30_000,
-});
+// Keys por instância: EVOLUTION_API_KEY_NOMEDAINSTANCIA (ex: EVOLUTION_API_KEY_ATIVA)
+function getApiKey(instance: string): string {
+  const envKey = `EVOLUTION_API_KEY_${instance.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+  return process.env[envKey] ?? DEFAULT_KEY;
+}
+
+function apiFor(instance: string) {
+  return axios.create({
+    baseURL: BASE,
+    headers: { apikey: getApiKey(instance), "Content-Type": "application/json" },
+    timeout: 30_000,
+  });
+}
 
 export async function sendText(instance: string, jid: string, text: string) {
-  await api.post(`/message/sendText/${instance}`, {
+  await apiFor(instance).post(`/message/sendText/${instance}`, {
     number: jid,
     text,
   });
@@ -18,7 +26,7 @@ export async function sendText(instance: string, jid: string, text: string) {
 
 export async function sendPresence(instance: string, jid: string, durationMs: number) {
   try {
-    await api.post(`/chat/sendPresence/${instance}`, {
+    await apiFor(instance).post(`/chat/sendPresence/${instance}`, {
       number: jid,
       options: { presence: "composing", delay: durationMs },
     });
@@ -28,7 +36,7 @@ export async function sendPresence(instance: string, jid: string, durationMs: nu
 }
 
 export async function sendAudio(instance: string, jid: string, audioUrl: string) {
-  await api.post(`/message/sendMedia/${instance}`, {
+  await apiFor(instance).post(`/message/sendMedia/${instance}`, {
     number: jid,
     mediatype: "audio",
     media: audioUrl,
@@ -41,7 +49,7 @@ export async function sendImage(
   imageUrl: string,
   caption: string
 ) {
-  await api.post(`/message/sendMedia/${instance}`, {
+  await apiFor(instance).post(`/message/sendMedia/${instance}`, {
     number: jid,
     mediatype: "image",
     mimetype: "image/jpeg",
@@ -51,7 +59,7 @@ export async function sendImage(
 }
 
 export async function getMediaBase64(instance: string, messageId: string, jid: string) {
-  const res = await api.post(`/chat/getBase64FromMediaMessage/${instance}`, {
+  const res = await apiFor(instance).post(`/chat/getBase64FromMediaMessage/${instance}`, {
     message: {
       key: {
         id: messageId,
