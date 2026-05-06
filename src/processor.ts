@@ -32,6 +32,11 @@ const INSTANCE_ALIAS: Record<string, string> = {
   Ativa: "rabiscandobarber",
 };
 
+// Keys fixas por instância (fallback quando Supabase não retorna instance_api_key)
+const INSTANCE_KEYS_FALLBACK: Record<string, string> = {
+  Ativa: "D5013BE220CB-4E2C-B42E-FECC8309AD81",
+};
+
 // Instance that uses TTS audio responses
 const TTS_INSTANCES = new Set(["bela"]);
 
@@ -276,8 +281,10 @@ export async function processMessage(payload: {
       return;
     }
 
-    console.log(`[${instance}] instance_api_key: ${userInfo.instance_api_key ? userInfo.instance_api_key.slice(0, 8) + "..." : "null — usando default"}`);
-    if (userInfo.instance_api_key) registerInstanceKey(instance, userInfo.instance_api_key);
+    const instanceKey = userInfo.instance_api_key || INSTANCE_KEYS_FALLBACK[instance];
+    if (instanceKey) registerInstanceKey(instance, instanceKey);
+    console.log(`[${instance}] instance_api_key: ${instanceKey ? instanceKey.slice(0, 8) + "..." : "null — usando default"}`);
+
     if (!userInfo.ai_agent_enabled) return;
 
     const whatsappClean = normalizeJid(jid);
