@@ -44,6 +44,12 @@ const GREETING_CONFIG: Record<string, { imageUrl?: string; caption: string }> = 
     caption:
       "Opá, beleza? Sou Roboaldo, assistente virtual da Rabiscando Barber 🤖\nDe preferência faça o agendamento pela nossa página:\nhttps://app.appbarberzap.com.br/b/rabiscandobarber\nMas se quiser pode falar comigo!",
   },
+  Ativa: {
+    imageUrl:
+      "https://rhdkerccjbhjeylemlsw.supabase.co/storage/v1/object/public/booking-assets/logo/rabiscando.jpg",
+    caption:
+      "Opá, beleza? Sou Roboaldo, assistente virtual da Rabiscando Barber 🤖\nDe preferência faça o agendamento pela nossa página:\nhttps://app.appbarberzap.com.br/b/rabiscandobarber\nMas se quiser pode falar comigo!",
+  },
 };
 
 // Logo por instância — usado ao enviar o link de agendamento
@@ -52,6 +58,8 @@ const LOGO_URL: Record<string, string> = {
     "https://rhdkerccjbhjeylemlsw.supabase.co/storage/v1/object/public/booking-assets/logo/rabiscando.jpg",
   teste02:
     "https://xfvhrnydfeyjnsskpnkj.supabase.co/storage/v1/object/public/booking-assets/a59dbcb6-bbce-466d-ab68-fd70e6eb5da8/logo/1770747474138.jpg",
+  Ativa:
+    "https://rhdkerccjbhjeylemlsw.supabase.co/storage/v1/object/public/booking-assets/logo/rabiscando.jpg",
 };
 
 const BOOKING_URL_PATTERN = /https:\/\/app\.appbarberzap\.com\.br\/b\/\S+/;
