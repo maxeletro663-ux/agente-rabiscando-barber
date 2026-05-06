@@ -294,10 +294,14 @@ export async function processMessage(payload: {
     if (!greetingSent) {
       const greeting = GREETING_CONFIG[instance];
       if (greeting) {
-        if (greeting.imageUrl) {
-          await sendImage(instance, jid, greeting.imageUrl, greeting.caption);
-        } else {
-          await sendText(instance, jid, greeting.caption);
+        try {
+          if (greeting.imageUrl) {
+            await sendImage(instance, jid, greeting.imageUrl, greeting.caption);
+          } else {
+            await sendText(instance, jid, greeting.caption);
+          }
+        } catch (err) {
+          console.error(`[${instance}] Erro ao enviar saudação:`, err);
         }
       }
       await markGreetingSent(jid);
