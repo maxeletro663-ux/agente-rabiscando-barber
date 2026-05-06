@@ -276,6 +276,7 @@ export async function processMessage(payload: {
       return;
     }
 
+    console.log(`[${instance}] instance_api_key: ${userInfo.instance_api_key ? userInfo.instance_api_key.slice(0, 8) + "..." : "null — usando default"}`);
     if (userInfo.instance_api_key) registerInstanceKey(instance, userInfo.instance_api_key);
     if (!userInfo.ai_agent_enabled) return;
 
