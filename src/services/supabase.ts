@@ -39,6 +39,7 @@ export async function getUserByInstance(instanceName: string): Promise<{
   horarios_por_dia: Record<string, string>;
   dias_abertos: string;
   dias_fechados: string;
+  instance_api_key?: string | null;
 } | null> {
   try {
     const data = await callFunction<{ user_id?: string; ai_agent_enabled?: boolean } & Record<string, unknown>>(

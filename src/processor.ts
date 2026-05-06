@@ -11,7 +11,7 @@ import {
   setPausedByHuman,
   isPausedByHuman,
 } from "./services/redis";
-import { sendText, sendPresence, sendAudio, sendImage, getMediaBase64 } from "./services/evolution";
+import { sendText, sendPresence, sendAudio, sendImage, getMediaBase64, registerInstanceKey } from "./services/evolution";
 import { transcribeAudio, textToSpeech, uploadAudio } from "./services/elevenlabs";
 import { getUserByInstance, getCustomerContext } from "./services/supabase";
 import { runAgent } from "./agent";
@@ -276,6 +276,7 @@ export async function processMessage(payload: {
       return;
     }
 
+    if (userInfo.instance_api_key) registerInstanceKey(instance, userInfo.instance_api_key);
     if (!userInfo.ai_agent_enabled) return;
 
     const whatsappClean = normalizeJid(jid);
