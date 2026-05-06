@@ -231,6 +231,12 @@ export async function processMessage(payload: {
     const messages = await getDebounceMessages(jid);
     if (messages.length === 0) return;
 
+    // Re-check pause: human may have intervened during the debounce wait
+    if (await isPausedByHuman(jid)) {
+      console.log(`[${instance}] Bot pausado por intervenção humana (pós-debounce) para ${jid}`);
+      return;
+    }
+
     // Lookup user by instance
     const userInfo = await getUserByInstance(instance);
     if (!userInfo) {
