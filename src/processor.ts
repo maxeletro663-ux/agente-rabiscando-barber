@@ -159,9 +159,11 @@ export async function processMessage(payload: {
   // Mensagens enviadas da instância (fromMe)
   if (fromMe) {
     // Se não veio via API (operador humano no celular/web) → pausar o bot por 5 min
-    if (source && source !== "api" && !jid.includes("@g.us")) {
+    // Nota: source pode ser "" quando enviado pelo celular/web — por isso não fazemos
+    // guard de truthiness; só excluímos source === "api" (mensagens do próprio bot)
+    if (source !== "api" && !jid.includes("@g.us")) {
       await setPausedByHuman(jid);
-      console.log(`[${instance}] Intervenção humana detectada (source=${source}) para ${jid} — pausando 5 min`);
+      console.log(`[${instance}] Intervenção humana detectada (source="${source}") para ${jid} — pausando 5 min`);
     }
     return;
   }
