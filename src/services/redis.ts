@@ -43,7 +43,7 @@ export async function setDebounceWaiting(jid: string): Promise<void> {
 
 export async function isDebounceWaiting(jid: string): Promise<boolean> {
   const val = await redis.get(`debounce:waiting:${jid}`);
-  return val === "1";
+  return val !== null && val !== undefined;
 }
 
 export async function clearDebounceWaiting(jid: string): Promise<void> {
@@ -55,7 +55,7 @@ export async function isGreetingSentToday(jid: string): Promise<boolean> {
   const dateStr = spDate.toISOString().slice(0, 10);
   const key = `saudacao:${jid}:${dateStr}`;
   const val = await redis.get(key);
-  return val === "enviada";
+  return val !== null && val !== undefined;
 }
 
 export async function markGreetingSent(jid: string): Promise<void> {
@@ -77,5 +77,5 @@ export async function isPausedByHuman(jid: string): Promise<boolean> {
   const key = `pause:human:${jid}`;
   const val = await redis.get(key);
   console.log(`[redis] isPausedByHuman key=${key} val=${val}`);
-  return val === "1";
+  return val !== null && val !== undefined;
 }
