@@ -318,6 +318,12 @@ export async function processMessage(payload: {
 
     if (!agentResponse) return;
 
+    // Re-check pause after Claude generation — human may have intervened during the API call
+    if (await isPausedByHuman(jid)) {
+      console.log(`[${instance}] Bot pausado por intervenção humana (pós-geração) para ${jid} — resposta descartada`);
+      return;
+    }
+
     // Salva histórico completo (inclui tool calls/results para manter appointment_id entre turnos)
     saveHistory(jid, newMessages);
 
