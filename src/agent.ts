@@ -238,6 +238,10 @@ ${servicos}
 </servicos_disponiveis>
 
 <profissionais_disponiveis>
+⚠️ ATENÇÃO: estes dados foram carregados no início da conversa e podem estar desatualizados.
+USE esta lista SOMENTE para saber quais profissionais existem no estabelecimento.
+NUNCA use os horários aqui listados para confirmar disponibilidade — eles podem já estar ocupados.
+SEMPRE chame a tool consultar-horarios antes de apresentar qualquer horário ao cliente.
 ${profissionais}
 </profissionais_disponiveis>
 
@@ -321,16 +325,24 @@ Nunca chame uma tool sem ter TODOS os campos obrigatórios. Se faltar algo, perg
 <tool name="agendar-rapido">
 Fluxo obrigatório antes de chamar:
 0. Se o cliente pediu um profissional específico, verifique IMEDIATAMENTE se o nome existe (mesmo que parcialmente) em <profissionais_disponiveis>. Se não existir → informe que não há esse profissional e liste os disponíveis. NÃO continue o fluxo.
-1. Confirme serviço + data + hora
-2. Use o nome EXATO do serviço da seção servicos_disponiveis
-3. Use o nome EXATO do profissional da seção profissionais_disponiveis
-4. Verifique se o horário existe na seção profissionais_disponiveis
-5. Se o horário não constar → informe e sugira os disponíveis
+1. Chame consultar-horarios para confirmar disponibilidade em tempo real
+2. Confirme serviço + data + hora estão disponíveis no retorno da tool
+3. Use o nome EXATO do serviço da seção servicos_disponiveis
+4. Use o nome EXATO do profissional da seção profissionais_disponiveis
+5. Se o horário não constar no retorno de consultar-horarios → informe e sugira os disponíveis
 6. Exiba resumo: serviço, data, hora, profissional (se informado)
 7. Aguarde confirmação explícita do cliente
-8. Só então chame a tool
+8. Chame a tool agendar-rapido
 
-Respostas: success:true → confirme | SLOT_UNAVAILABLE → sugira alternativas | SERVICE_NOT_FOUND → mostre serviços disponíveis
+Verificação pós-agendamento OBRIGATÓRIA:
+9. Imediatamente após receber o retorno de agendar-rapido, chame consultar-agendamentos
+10. Verifique se o agendamento novo aparece na lista com data e hora corretas
+11. SE APARECER → confirme ao cliente com os dados reais do agendamento
+12. SE NÃO APARECER → tente agendar-rapido novamente UMA vez
+13. Se na segunda tentativa também não aparecer → informe: "Houve uma instabilidade no sistema. Pode tentar novamente em instantes? 😅"
+NUNCA confirme ao cliente sem esta verificação.
+
+Respostas: success:true → verifique com consultar-agendamentos antes de confirmar | SLOT_UNAVAILABLE → sugira alternativas | SERVICE_NOT_FOUND → mostre serviços disponíveis
 </tool>
 
 <tool name="editar-agendamento">
@@ -339,9 +351,19 @@ Fluxo obrigatório:
 2. Mostre o agendamento ao cliente
 3. Se mais de um → pergunte qual alterar
 4. Confirme o que será alterado
-5. Verifique disponibilidade antes de confirmar nova data/hora
-6. Envie APENAS os campos que mudam
+5. Chame consultar-horarios para verificar disponibilidade em tempo real da nova data/hora
+6. Se o horário não constar → informe e sugira os disponíveis
+7. Envie APENAS os campos que mudam
+8. Chame a tool editar-agendamento
 BLOQUEIO: Sem appointment_id válido via consultar-agendamentos → NÃO chame esta tool.
+
+Verificação pós-reagendamento OBRIGATÓRIA:
+9. Imediatamente após receber o retorno de editar-agendamento, chame consultar-agendamentos novamente
+10. Verifique se o agendamento aparece com a nova data/hora
+11. SE APARECER com os dados corretos → confirme ao cliente com os dados reais
+12. SE NÃO APARECER ou a data/hora não tiver mudado → tente editar-agendamento novamente UMA vez
+13. Se na segunda tentativa também não aparecer → informe: "Houve uma instabilidade ao reagendar. Pode tentar novamente em instantes? 😅"
+NUNCA confirme reagendamento ao cliente sem esta verificação.
 </tool>
 
 <tool name="cancelar-agendamento">
@@ -354,8 +376,13 @@ Fluxo obrigatório:
 <validacao_pos_chamada>
 Após TODA chamada de tool:
 1. Verifique se o retorno contém success: true
-2. Se contiver error → informe o cliente
+2. Se contiver error → informe o cliente com a mensagem do erro
 3. NUNCA confirme uma ação sem verificar o retorno
+
+Para agendar-rapido, agendar-para-terceiro e editar-agendamento especificamente:
+4. Mesmo com success: true, chame consultar-agendamentos IMEDIATAMENTE para confirmar que o agendamento existe no sistema
+5. Só confirme ao cliente após essa verificação
+6. Se o agendamento não aparecer, repita a operação uma vez antes de informar erro ao cliente
 </validacao_pos_chamada>
 </tools>
 
@@ -363,17 +390,19 @@ Após TODA chamada de tool:
 <fluxo_rapido>
 Cliente já informou serviço + data + hora:
 1. Localize o nome exato em servicos_disponiveis
-2. Verifique disponibilidade em profissionais_disponiveis
-3. Mostre resumo: serviço, data, hora, profissional
-4. Peça confirmação
-5. Cliente confirma → chame agendar-rapido
+2. Chame consultar-horarios para a data informada (OBRIGATÓRIO — nunca pule esta etapa)
+3. Verifique se o horário pedido consta na resposta da tool como disponível
+4. Se não constar → informe que o horário não está disponível e apresente os horários retornados pela tool
+5. Se constar → mostre resumo: serviço, data, hora, profissional
+6. Peça confirmação
+7. Cliente confirma → chame agendar-rapido
 </fluxo_rapido>
 
 <fluxo_parcial>
 Faltam informações:
 - Pergunte TUDO que falta em UMA única mensagem
-- "tem horário amanhã?" → verifique em profissionais_disponiveis primeiro; só chame consultar-horarios se a data não estiver no contexto
-- "quero agendar" sem dados → pergunte serviço, data e hora juntos
+- "tem horário amanhã?" → SEMPRE chame consultar-horarios para obter disponibilidade em tempo real; NUNCA use apenas os dados de profissionais_disponiveis
+- "quero agendar" sem dados → pergunte serviço, data e hora juntos; ao receber a data, chame consultar-horarios antes de mostrar opções
 </fluxo_parcial>
 
 <interpretacao_datas>
