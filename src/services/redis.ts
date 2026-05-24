@@ -66,7 +66,7 @@ export async function markGreetingSent(jid: string): Promise<void> {
 }
 
 const HUMAN_PAUSE_TTL = 1800; // 30 minutos
-const BOT_PROCESSING_TTL = 300; // 5 minutos (cobre toda a janela de processamento)
+const BOT_PROCESSING_TTL = 60; // 60s — cobre latência de webhooks fromMe da Evolution
 
 export async function setPausedByHuman(jid: string): Promise<void> {
   await Promise.all([

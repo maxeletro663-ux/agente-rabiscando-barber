@@ -11,7 +11,6 @@ import {
   setPausedByHuman,
   isPausedByHuman,
   setBotProcessing,
-  clearBotProcessing,
   isBotProcessing,
 } from "./services/redis";
 import { sendText, sendPresence, sendAudio, sendImage, getMediaBase64, registerInstanceKey } from "./services/evolution";
@@ -340,7 +339,8 @@ export async function processMessage(payload: {
     const blocks = splitResponse(cleanMarkdown(agentResponse));
     await sendResponseBlocks(instance, jid, blocks, useTts);
   } finally {
-    await clearBotProcessing(jid);
     await releaseLock(jid);
+    // Não limpa bot:processing explicitamente — o TTL de 60s garante que webhooks
+    // fromMe das mensagens enviadas (que chegam segundos depois) não acionem pause.
   }
 }
