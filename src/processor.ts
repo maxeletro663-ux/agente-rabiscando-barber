@@ -10,6 +10,9 @@ import {
   markGreetingSent,
   setPausedByHuman,
   isPausedByHuman,
+  setBotProcessing,
+  clearBotProcessing,
+  isBotProcessing,
 } from "./services/redis";
 import { sendText, sendPresence, sendAudio, sendImage, getMediaBase64, registerInstanceKey } from "./services/evolution";
 import { transcribeAudio, textToSpeech, uploadAudio } from "./services/elevenlabs";
@@ -179,12 +182,13 @@ export async function processMessage(payload: {
 
   // Mensagens enviadas da instância (fromMe)
   if (fromMe) {
-    // Se não veio via API (operador humano no celular/web) → pausar o bot por 5 min
-    // Nota: source pode ser "" quando enviado pelo celular/web — por isso não fazemos
-    // guard de truthiness; só excluímos source === "api" (mensagens do próprio bot)
-    if (source !== "api" && !jid.includes("@g.us")) {
+    // source === "api" → mensagem do próprio bot via REST API
+    // isBotProcessing → bot está ativo para este JID (proteção extra quando Evolution
+    //   não envia source="api" corretamente para mensagens enviadas via API)
+    const botSent = source === "api" || (await isBotProcessing(jid));
+    if (!botSent && !jid.includes("@g.us")) {
       await setPausedByHuman(jid);
-      console.log(`[${instance}] Intervenção humana detectada (source="${source}") para ${jid} — pausando 5 min`);
+      console.log(`[${instance}] Intervenção humana detectada (source="${source}") para ${jid} — pausando 30 min`);
     }
     return;
   }
@@ -206,6 +210,10 @@ export async function processMessage(payload: {
   }
 
   try {
+    // Marca que o bot está processando para este JID — impede que webhooks fromMe
+    // do próprio bot (greeting, respostas) acionem setPausedByHuman erroneamente
+    await setBotProcessing(jid);
+
     let text = payload.text || "";
 
     // Transcribe audio if needed
@@ -332,6 +340,7 @@ export async function processMessage(payload: {
     const blocks = splitResponse(cleanMarkdown(agentResponse));
     await sendResponseBlocks(instance, jid, blocks, useTts);
   } finally {
-    releaseLock(jid);
+    await clearBotProcessing(jid);
+    await releaseLock(jid);
   }
 }

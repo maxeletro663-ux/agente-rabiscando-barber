@@ -66,6 +66,7 @@ export async function markGreetingSent(jid: string): Promise<void> {
 }
 
 const HUMAN_PAUSE_TTL = 1800; // 30 minutos
+const BOT_PROCESSING_TTL = 300; // 5 minutos (cobre toda a janela de processamento)
 
 export async function setPausedByHuman(jid: string): Promise<void> {
   await Promise.all([
@@ -77,5 +78,18 @@ export async function setPausedByHuman(jid: string): Promise<void> {
 
 export async function isPausedByHuman(jid: string): Promise<boolean> {
   const val = await redis.get(`pause:human:${jid}`);
+  return val !== null && val !== undefined;
+}
+
+export async function setBotProcessing(jid: string): Promise<void> {
+  await redis.set(`bot:processing:${jid}`, "1", { ex: BOT_PROCESSING_TTL });
+}
+
+export async function clearBotProcessing(jid: string): Promise<void> {
+  await redis.del(`bot:processing:${jid}`);
+}
+
+export async function isBotProcessing(jid: string): Promise<boolean> {
+  const val = await redis.get(`bot:processing:${jid}`);
   return val !== null && val !== undefined;
 }
