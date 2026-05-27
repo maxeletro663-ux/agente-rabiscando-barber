@@ -3,7 +3,7 @@ import FormData from "form-data";
 import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 
 const UPLOAD_URL = process.env.AUDIO_UPLOAD_URL!;
-const TTS_RATE = "+30%";
+const TTS_RATE = "+0%";
 
 export async function transcribeAudio(base64: string): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY!;
