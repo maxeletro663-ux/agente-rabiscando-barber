@@ -2,26 +2,32 @@ import axios from "axios";
 import FormData from "form-data";
 import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 
-const API_KEY = process.env.ELEVENLABS_API_KEY!;
-const VOICE_ID = process.env.ELEVENLABS_VOICE_ID!;
 const UPLOAD_URL = process.env.AUDIO_UPLOAD_URL!;
 
 export async function transcribeAudio(base64: string): Promise<string> {
+  const apiKey = process.env.GROQ_API_KEY!;
   const buffer = Buffer.from(base64, "base64");
-  const form = new FormData();
-  form.append("file", buffer, { filename: "audio.ogg", contentType: "audio/ogg" });
-  form.append("model_id", "scribe_v1");
-  form.append("language_code", "pt");
+  const blob = new Blob([buffer], { type: "audio/ogg" });
 
-  const res = await axios.post(
-    "https://api.elevenlabs.io/v1/speech-to-text",
-    form,
-    {
-      headers: { ...form.getHeaders(), "xi-api-key": API_KEY },
-      timeout: 30_000,
-    }
-  );
-  return (res.data as { text: string }).text || "";
+  const form = new globalThis.FormData();
+  form.append("file", blob, "audio.ogg");
+  form.append("model", "whisper-large-v3-turbo");
+  form.append("language", "pt");
+  form.append("response_format", "text");
+
+  const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Groq transcription error: ${err}`);
+  }
+
+  return (await res.text()).trim();
 }
 
 export async function textToSpeech(text: string): Promise<Buffer> {
