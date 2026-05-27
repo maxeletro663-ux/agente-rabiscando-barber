@@ -49,10 +49,10 @@ export async function textToSpeech(text: string): Promise<Buffer> {
 }
 
 export async function uploadAudio(audioBuffer: Buffer): Promise<string> {
-  const base = process.env.SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY!;
-  const bucket = "booking-assets";
-  const filename = `tts/${Date.now()}-${Math.random().toString(36).slice(2)}.mp3`;
+  const base = process.env.TTS_SUPABASE_URL!;
+  const key = process.env.TTS_SUPABASE_KEY!;
+  const bucket = "tts-audio";
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.mp3`;
 
   const res = await axios.post(
     `${base}/storage/v1/object/${bucket}/${filename}`,
