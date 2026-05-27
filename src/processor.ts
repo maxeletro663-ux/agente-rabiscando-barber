@@ -180,8 +180,8 @@ async function sendResponseBlocks(
           await sendAudio(instance, jid, audioUrl);
           continue;
         }
-      } catch {
-        // fallback para texto se TTS falhar
+      } catch (err) {
+        console.error(`[${instance}] TTS falhou, enviando texto:`, err);
       }
     }
     await sendText(instance, jid, block);
@@ -245,12 +245,12 @@ export async function processMessage(payload: {
     let replyWithAudio = false;
 
     // Transcribe audio if needed
-    if (messageType === "audioMessage" && payload.messageId) {
+    if (messageType === "audioMessage") {
       replyWithAudio = true;
       if (text) {
         // WhatsApp já enviou transcrição nativa (speechToText) — usa ela diretamente
         console.log(`[${instance}] Usando speechToText nativo do WhatsApp`);
-      } else {
+      } else if (payload.messageId) {
         // Sem transcrição nativa — tenta via Groq Whisper
         try {
           const media = await getMediaBase64(instance, payload.messageId, jid);
