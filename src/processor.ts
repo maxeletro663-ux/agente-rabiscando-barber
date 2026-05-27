@@ -214,20 +214,22 @@ export async function processMessage(payload: {
     await setBotProcessing(jid);
 
     let text = payload.text || "";
+    let replyWithAudio = false;
 
     // Transcribe audio if needed
     if (messageType === "audioMessage" && payload.messageId) {
+      replyWithAudio = true;
       if (text) {
         // WhatsApp já enviou transcrição nativa (speechToText) — usa ela diretamente
         console.log(`[${instance}] Usando speechToText nativo do WhatsApp`);
       } else {
-        // Sem transcrição nativa — tenta via ElevenLabs
+        // Sem transcrição nativa — tenta via Groq Whisper
         try {
           const media = await getMediaBase64(instance, payload.messageId, jid);
           const base64 = media?.base64;
           if (base64) {
             text = await transcribeAudio(base64);
-            console.log(`[${instance}] Áudio transcrito via ElevenLabs`);
+            console.log(`[${instance}] Áudio transcrito via Groq Whisper`);
           } else {
             console.warn(`[${instance}] Áudio sem base64: messageId=${payload.messageId}`);
           }
@@ -334,8 +336,8 @@ export async function processMessage(payload: {
     // Salva histórico completo (inclui tool calls/results para manter appointment_id entre turnos)
     saveHistory(jid, newMessages);
 
-    // Send response
-    const useTts = TTS_INSTANCES.has(instance);
+    // Send response — usa áudio se a instância tem TTS ativo OU se o cliente enviou áudio
+    const useTts = TTS_INSTANCES.has(instance) || replyWithAudio;
     const blocks = splitResponse(cleanMarkdown(agentResponse));
     await sendResponseBlocks(instance, jid, blocks, useTts);
   } finally {
