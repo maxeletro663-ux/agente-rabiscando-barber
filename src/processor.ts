@@ -100,9 +100,15 @@ function cleanMarkdown(text: string): string {
              .replace(/\*(https?:\/\/[^\s*]+)\*/g, "$1");
 }
 
-// Remove emojis para evitar que o TTS descreva os símbolos em voz alta
-function stripEmojis(text: string): string {
+// Remove emojis e markdown para evitar que o TTS narre símbolos em voz alta
+function cleanForTts(text: string): string {
   return text
+    .replace(/\*\*(.+?)\*\*/g, "$1")   // **bold** → bold
+    .replace(/\*(.+?)\*/g, "$1")        // *italic* → italic
+    .replace(/\_\_(.+?)\_\_/g, "$1")    // __bold__ → bold
+    .replace(/\_(.+?)\_/g, "$1")        // _italic_ → italic
+    .replace(/~~(.+?)~~/g, "$1")        // ~~strike~~ → strike
+    .replace(/`(.+?)`/g, "$1")          // `code` → code
     .replace(/[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]|[\u{FE00}-\u{FEFE}]/gu, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -167,7 +173,7 @@ async function sendResponseBlocks(
     // Áudio apenas para blocos conversacionais — informações ficam em texto
     if (useTts && !isInformational(block)) {
       try {
-        const ttsText = stripEmojis(block);
+        const ttsText = cleanForTts(block);
         if (ttsText) {
           const audioBuffer = await textToSpeech(ttsText);
           const audioUrl = await uploadAudio(audioBuffer);
