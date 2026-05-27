@@ -1,4 +1,5 @@
 import { MsEdgeTTS, OUTPUT_FORMAT, ProsodyOptions, RATE } from "msedge-tts";
+import axios from "axios";
 
 export async function transcribeAudio(base64: string): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY!;
@@ -45,5 +46,29 @@ export async function textToSpeech(text: string): Promise<Buffer> {
   if (buffer.length === 0) throw new Error("Edge TTS retornou buffer vazio");
   console.log(`[tts] Edge TTS pt-BR-AntonioNeural: ${buffer.length} bytes`);
   return buffer;
+}
+
+export async function uploadAudio(audioBuffer: Buffer): Promise<string> {
+  const base = process.env.SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY!;
+  const bucket = "tts-audio";
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.mp3`;
+
+  const res = await axios.post(
+    `${base}/storage/v1/object/${bucket}/${filename}`,
+    audioBuffer,
+    {
+      headers: {
+        Authorization: `Bearer ${key}`,
+        apikey: key,
+        "Content-Type": "audio/mpeg",
+        "x-upsert": "true",
+      },
+      timeout: 15_000,
+    }
+  );
+
+  if (res.status >= 400) throw new Error(`Supabase upload error: ${res.status}`);
+  return `${base}/storage/v1/object/public/${bucket}/${filename}`;
 }
 
