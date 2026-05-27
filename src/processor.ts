@@ -14,7 +14,7 @@ import {
   isBotProcessing,
 } from "./services/redis";
 import { sendText, sendPresence, sendAudio, sendImage, getMediaBase64, registerInstanceKey } from "./services/evolution";
-import { transcribeAudio, textToSpeech, uploadAudio } from "./services/audio";
+import { transcribeAudio, textToSpeech } from "./services/audio";
 import { getUserByInstance, getCustomerContext } from "./services/supabase";
 import { runAgent } from "./agent";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -176,8 +176,8 @@ async function sendResponseBlocks(
         const ttsText = cleanForTts(block);
         if (ttsText) {
           const audioBuffer = await textToSpeech(ttsText);
-          const audioUrl = await uploadAudio(audioBuffer);
-          await sendAudio(instance, jid, audioUrl);
+          const base64 = audioBuffer.toString("base64");
+          await sendAudio(instance, jid, `data:audio/mpeg;base64,${base64}`);
           continue;
         }
       } catch (err) {

@@ -1,8 +1,5 @@
-import axios from "axios";
-import FormData from "form-data";
 import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 
-const UPLOAD_URL = process.env.AUDIO_UPLOAD_URL!;
 const TTS_RATE = "+0%";
 
 export async function transcribeAudio(base64: string): Promise<string> {
@@ -52,13 +49,3 @@ export async function textToSpeech(text: string): Promise<Buffer> {
   return buffer;
 }
 
-export async function uploadAudio(audioBuffer: Buffer): Promise<string> {
-  const form = new FormData();
-  form.append("file", audioBuffer, { filename: "response.mp3", contentType: "audio/mpeg" });
-
-  const res = await axios.post(UPLOAD_URL, form, {
-    headers: form.getHeaders(),
-    timeout: 30_000,
-  });
-  return (res.data as { url: string }).url;
-}
