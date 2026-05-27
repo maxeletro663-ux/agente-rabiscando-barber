@@ -96,9 +96,27 @@ function saveHistory(jid: string, newMessages: Anthropic.MessageParam[]) {
 }
 
 function cleanMarkdown(text: string): string {
-  // Remove ** ao redor de URLs para não quebrar links no WhatsApp
   return text.replace(/\*\*(https?:\/\/[^\s*]+)\*\*/g, "$1")
              .replace(/\*(https?:\/\/[^\s*]+)\*/g, "$1");
+}
+
+// Remove emojis para evitar que o TTS descreva os símbolos em voz alta
+function stripEmojis(text: string): string {
+  return text
+    .replace(/[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]|[\u{FE00}-\u{FEFE}]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Blocos com horários, datas, valores, URLs ou listas → manter em texto
+function isInformational(text: string): boolean {
+  if (/\d{1,2}:\d{2}/.test(text)) return true;       // horários (14:00)
+  if (/\d{2}\/\d{2}/.test(text)) return true;         // datas (27/05)
+  if (/\d{4}-\d{2}-\d{2}/.test(text)) return true;   // datas ISO
+  if (/https?:\/\//.test(text)) return true;           // URLs
+  if (/R\$/.test(text)) return true;                   // valores monetários
+  if ((text.match(/\n/g) || []).length >= 2) return true; // listas/múltiplas linhas
+  return false;
 }
 
 function splitResponse(text: string, limit = 250): string[] {
@@ -146,17 +164,21 @@ async function sendResponseBlocks(
       }
     }
 
-    if (useTts) {
+    // Áudio apenas para blocos conversacionais — informações ficam em texto
+    if (useTts && !isInformational(block)) {
       try {
-        const audioBuffer = await textToSpeech(block);
-        const audioUrl = await uploadAudio(audioBuffer);
-        await sendAudio(instance, jid, audioUrl);
+        const ttsText = stripEmojis(block);
+        if (ttsText) {
+          const audioBuffer = await textToSpeech(ttsText);
+          const audioUrl = await uploadAudio(audioBuffer);
+          await sendAudio(instance, jid, audioUrl);
+          continue;
+        }
       } catch {
-        await sendText(instance, jid, block);
+        // fallback para texto se TTS falhar
       }
-    } else {
-      await sendText(instance, jid, block);
     }
+    await sendText(instance, jid, block);
   }
 }
 
