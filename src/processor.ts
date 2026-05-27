@@ -171,7 +171,7 @@ async function sendResponseBlocks(
     }
 
     // Áudio apenas para blocos conversacionais — informações ficam em texto
-    if (useTts && !isInformational(block)) {
+    if (useTts && !isInformational(block) && process.env.TTS_ENABLED === "true") {
       try {
         const ttsText = cleanForTts(block);
         if (ttsText) {
