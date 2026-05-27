@@ -3,6 +3,7 @@ import FormData from "form-data";
 import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 
 const UPLOAD_URL = process.env.AUDIO_UPLOAD_URL!;
+const TTS_RATE = "+30%";
 
 export async function transcribeAudio(base64: string): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY!;
@@ -34,9 +35,12 @@ export async function textToSpeech(text: string): Promise<Buffer> {
   const tts = new MsEdgeTTS();
   await tts.setMetadata("pt-BR-AntonioNeural", OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
 
+  const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const ssml = `<speak version='1.0' xml:lang='pt-BR'><voice name='pt-BR-AntonioNeural'><prosody rate='${TTS_RATE}'>${escaped}</prosody></voice></speak>`;
+
   const buffer = await new Promise<Buffer>((resolve, reject) => {
     const chunks: Buffer[] = [];
-    const { audioStream } = tts.toStream(text);
+    const { audioStream } = tts.toStream(ssml);
     audioStream.on("data", (chunk: Buffer) => chunks.push(chunk));
     audioStream.on("end", () => resolve(Buffer.concat(chunks)));
     audioStream.on("error", reject);
@@ -44,7 +48,7 @@ export async function textToSpeech(text: string): Promise<Buffer> {
   });
 
   if (buffer.length === 0) throw new Error("Edge TTS retornou buffer vazio");
-  console.log(`[tts] Edge TTS (pt-BR-AntonioNeural): ${buffer.length} bytes`);
+  console.log(`[tts] Edge TTS pt-BR-AntonioNeural rate=${TTS_RATE}: ${buffer.length} bytes`);
   return buffer;
 }
 
