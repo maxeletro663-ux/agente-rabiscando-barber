@@ -41,10 +41,10 @@ export async function sendPresence(instance: string, jid: string, durationMs: nu
 }
 
 export async function sendAudio(instance: string, jid: string, audioUrl: string) {
-  await apiFor(instance).post(`/message/sendMedia/${instance}`, {
+  await apiFor(instance).post(`/message/sendWhatsAppAudio/${instance}`, {
     number: jid,
-    mediatype: "audio",
-    media: audioUrl,
+    audio: audioUrl,
+    encoding: true,
   });
 }
 
