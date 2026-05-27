@@ -1,5 +1,6 @@
 import axios from "axios";
 import FormData from "form-data";
+import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 
 const API_KEY = process.env.ELEVENLABS_API_KEY!;
 const VOICE_ID = process.env.ELEVENLABS_VOICE_ID!;
@@ -24,26 +25,21 @@ export async function transcribeAudio(base64: string): Promise<string> {
 }
 
 export async function textToSpeech(text: string): Promise<Buffer> {
-  const res = await axios.post(
-    `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
-    {
-      text,
-      model_id: "eleven_multilingual_v2",
-      voice_settings: {
-        stability: 0.9,
-        similarity_boost: 1,
-        style: 0,
-        use_speaker_boost: true,
-        speed: 1.15,
-      },
-    },
-    {
-      headers: { "xi-api-key": API_KEY, "Content-Type": "application/json" },
-      responseType: "arraybuffer",
-      timeout: 60_000,
-    }
-  );
-  return Buffer.from(res.data as ArrayBuffer);
+  const tts = new MsEdgeTTS();
+  await tts.setMetadata("pt-BR-AntonioNeural", OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+
+  const buffer = await new Promise<Buffer>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const { audioStream } = tts.toStream(text);
+    audioStream.on("data", (chunk: Buffer) => chunks.push(chunk));
+    audioStream.on("end", () => resolve(Buffer.concat(chunks)));
+    audioStream.on("error", reject);
+    setTimeout(() => reject(new Error("Edge TTS timeout")), 15000);
+  });
+
+  if (buffer.length === 0) throw new Error("Edge TTS retornou buffer vazio");
+  console.log(`[tts] Edge TTS (pt-BR-AntonioNeural): ${buffer.length} bytes`);
+  return buffer;
 }
 
 export async function uploadAudio(audioBuffer: Buffer): Promise<string> {
