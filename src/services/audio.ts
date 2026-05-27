@@ -1,4 +1,4 @@
-import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
+import { MsEdgeTTS, OUTPUT_FORMAT, ProsodyOptions, RATE } from "msedge-tts";
 
 export async function transcribeAudio(base64: string): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY!;
@@ -30,12 +30,12 @@ export async function textToSpeech(text: string): Promise<Buffer> {
   const tts = new MsEdgeTTS();
   await tts.setMetadata("pt-BR-AntonioNeural", OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
 
-  const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const ssml = `<speak version='1.0' xml:lang='pt-BR'><voice name='pt-BR-AntonioNeural'>${escaped}</voice></speak>`;
+  const prosody = new ProsodyOptions();
+  prosody.rate = RATE.FAST;
 
   const buffer = await new Promise<Buffer>((resolve, reject) => {
     const chunks: Buffer[] = [];
-    const { audioStream } = tts.toStream(ssml);
+    const { audioStream } = tts.toStream(text, prosody);
     audioStream.on("data", (chunk: Buffer) => chunks.push(chunk));
     audioStream.on("end", () => resolve(Buffer.concat(chunks)));
     audioStream.on("error", reject);
