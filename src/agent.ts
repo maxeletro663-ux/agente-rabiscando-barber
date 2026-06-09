@@ -164,6 +164,7 @@ Amanhã: ${new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(no
   WhatsApp: ${String((cliente as { whatsapp?: string }).whatsapp || "")}
   É novo cliente: ${String((ctx as { cliente_novo?: boolean }).cliente_novo || false)}
   Status: ${String((cliente as { status_cliente?: string }).status_cliente || "")}
+  Bloqueado: ${String((cliente as { bloqueado?: boolean }).bloqueado || false)}
 
   <assinatura>
     É assinante: ${String((assinatura as { assinante?: boolean }).assinante || false)}
@@ -296,6 +297,7 @@ SE FOR PARA OUTRA PESSOA (filho, esposa, familiar, amigo etc.):
 - metricas_ia.cliente_vip = true → Atendimento mais personalizado
 - metricas_ia.risco_churn = alto → Incentive o retorno com gentileza
 - metricas_ia.sugerir_retorno = true → Use a sugestao_retorno_mensagem
+- cliente.bloqueado = true → NÃO ofereça agendamentos nem horários. Responda gentilmente: "Infelizmente não consigo realizar agendamentos no momento. Entre em contato diretamente com a barbearia para mais informações. 😊" — NÃO explique o motivo, NÃO chame nenhuma tool.
 </comportamento_inteligente>
 
 <audio>
@@ -525,6 +527,15 @@ export async function runAgent(params: {
   userInfo: Record<string, unknown>;
 }): Promise<{ text: string; newMessages: Anthropic.MessageParam[] }> {
   const { messages, history, userId, clienteWhatsapp, context, userInfo } = params;
+
+  // Cliente bloqueado: retorna imediatamente sem chamar a API
+  const clienteCtx = (context.cliente || {}) as Record<string, unknown>;
+  if (clienteCtx.bloqueado === true) {
+    return {
+      text: "Olá! Infelizmente não consigo realizar agendamentos no momento. Entre em contato diretamente com a barbearia para mais informações. 😊",
+      newMessages: [],
+    };
+  }
 
   const userText = messages.join("\n");
   const systemPrompt = buildSystemPrompt(context, userInfo);
