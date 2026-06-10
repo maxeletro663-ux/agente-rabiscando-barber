@@ -154,11 +154,6 @@ async function sendResponseBlocks(
   useTts: boolean
 ) {
   for (const block of blocks) {
-    const cps = 40;
-    const delay = Math.max(1000, Math.round((block.length / cps) * 1000));
-    await sendPresence(instance, jid, delay);
-    await new Promise((r) => setTimeout(r, delay));
-
     // Se o bloco contém o link de agendamento, envia como imagem + caption
     const logoUrl = LOGO_URL[instance];
     if (logoUrl && BOOKING_URL_PATTERN.test(block)) {
