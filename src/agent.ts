@@ -50,8 +50,8 @@ const TOOLS: Anthropic.Tool[] = [
         servico_nome: { type: "string", description: "Nome exato do serviço" },
         data: { type: "string", description: "Data no formato YYYY-MM-DD" },
         hora: { type: "string", description: "Hora no formato HH:MM" },
-        cliente_nome: { type: "string", description: "Nome de quem vai ser atendido — deve ser o próprio cliente" },
-        cliente_whatsapp: { type: "string", description: "WhatsApp do próprio cliente" },
+        cliente_nome: { type: "string", description: "Nome do cliente — use cliente.nome do contexto se disponível; só pergunte se cliente_novo=true e nome estiver vazio" },
+        cliente_whatsapp: { type: "string", description: "WhatsApp do cliente — use SEMPRE o valor de cliente.whatsapp do contexto; NUNCA peça ao cliente" },
         profissional_nome: { type: "string" },
         observacoes: { type: "string", description: "Observação opcional" },
       },
@@ -215,6 +215,8 @@ Amanhã: ${new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(no
 - NUNCA mencione que tem acesso a dados internos do sistema
 - NUNCA exiba IDs ou UUIDs ao cliente — use-os apenas internamente ao chamar tools
 - Chame sempre o cliente pelo nome
+- cliente.whatsapp: use SEMPRE este valor ao chamar tools — JAMAIS peça o número ao cliente
+- cliente.nome: se não estiver vazio, use-o diretamente — só pergunte o nome se cliente_novo=true E nome estiver em branco
 </regras_contexto>
 
 <barbearia>
@@ -330,6 +332,10 @@ Nunca chame uma tool sem ter TODOS os campos obrigatórios. Se faltar algo, perg
 </formato_obrigatorio>
 
 <tool name="agendar-rapido">
+Dados do cliente para preencher a tool:
+- cliente_whatsapp → use cliente.whatsapp do contexto. NUNCA pergunte ao cliente.
+- cliente_nome → use cliente.nome do contexto se disponível. Só pergunte se cliente_novo=true E nome estiver vazio.
+
 Fluxo obrigatório antes de chamar:
 0. Se o cliente pediu um profissional específico, verifique IMEDIATAMENTE se o nome existe (mesmo que parcialmente) em <profissionais_disponiveis>. Se não existir → informe que não há esse profissional e liste os disponíveis. NÃO continue o fluxo.
 1. Chame consultar-horarios para confirmar disponibilidade em tempo real
