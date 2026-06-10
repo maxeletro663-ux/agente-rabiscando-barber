@@ -226,8 +226,8 @@ export async function processMessage(payload: {
   // Acquire processing lock to avoid concurrent execution for same JID
   const locked = await acquireLock(jid);
   if (!locked) {
-    // Already processing — queue the message for debounce
     if (payload.text) await pushDebounce(jid, payload.text);
+    console.log(`[${instance}] lock ocupado para ${jid} — mensagem enfileirada`);
     return;
   }
 
