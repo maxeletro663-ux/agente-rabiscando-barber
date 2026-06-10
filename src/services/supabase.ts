@@ -2,10 +2,12 @@ import axios from "axios";
 
 const BASE = process.env.SUPABASE_URL!;
 const ANON = process.env.SUPABASE_ANON_KEY!;
+// Service role key is required to call edge functions that reject the anon key
+const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY || ANON;
 
 const headers = {
-  Authorization: `Bearer ${ANON}`,
-  apikey: ANON,
+  Authorization: `Bearer ${SERVICE_ROLE}`,
+  apikey: SERVICE_ROLE,
   "Content-Type": "application/json",
 };
 

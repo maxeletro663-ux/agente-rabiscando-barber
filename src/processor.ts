@@ -28,7 +28,6 @@ const HISTORY_MAX = 20; // max message pairs to keep
 // Alias de instâncias: instâncias de teste apontam para o user_id de outra instância no Supabase
 const INSTANCE_ALIAS: Record<string, string> = {
   Ativa: "rabiscandobarber",
-  teste02: "rabiscandobarber",
 };
 
 // Keys fixas por instância (fallback quando Supabase não retorna instance_api_key)
