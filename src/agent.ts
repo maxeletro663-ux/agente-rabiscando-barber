@@ -565,12 +565,19 @@ export async function runAgent(params: {
     for (const block of response.content) {
       if (block.type !== "tool_use") continue;
 
-      const result = await executeTool(
-        block.name,
-        block.input as Record<string, unknown>,
-        userId,
-        clienteWhatsapp
-      );
+      let result: unknown;
+      try {
+        result = await executeTool(
+          block.name,
+          block.input as Record<string, unknown>,
+          userId,
+          clienteWhatsapp
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        result = { error: `Falha ao executar ${block.name}: ${msg}` };
+        console.error(`[tool:${block.name}] erro:`, msg);
+      }
 
       toolResults.push({
         type: "tool_result",
