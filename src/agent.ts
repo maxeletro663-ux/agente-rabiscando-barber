@@ -118,6 +118,16 @@ function buildSystemPrompt(
   const isoDate = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(now); // YYYY-MM-DD
   const timeStr = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
   const weekday = now.toLocaleDateString("pt-BR", { weekday: "long", timeZone: TZ });
+
+  // Calendário pré-computado dos próximos 14 dias — evita que o modelo erre a
+  // conversão de "quinta", "próxima terça" etc. para a data real (YYYY-MM-DD).
+  const calendario = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(now.getTime() + i * 86400000);
+    const iso = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(d);
+    const wd = d.toLocaleDateString("pt-BR", { weekday: "long", timeZone: TZ });
+    const tag = i === 0 ? "  ← HOJE" : i === 1 ? "  ← AMANHÃ" : "";
+    return `  ${iso} = ${wd}${tag}`;
+  }).join("\n");
   const barbearia = (ctx as { barbearia?: Record<string, unknown> }).barbearia || {};
   const cliente = (ctx as { cliente?: Record<string, unknown> }).cliente || {};
   const assinatura = (ctx as { assinatura?: Record<string, unknown> }).assinatura || {};
@@ -127,20 +137,32 @@ function buildSystemPrompt(
   const preferencias = (ctx as { preferencias?: Record<string, unknown> }).preferencias || {};
   const metricas = (ctx as { metricas_ia?: Record<string, unknown> }).metricas_ia || {};
 
+  // Veredito único de assinatura — a fonte da verdade é o boolean `assinante`.
+  // Ex-assinantes vêm com plano_nome/data_vencimento residuais (do plano antigo),
+  // o que confundia o modelo. Aqui resolvemos o fluxo no código e só mostramos os
+  // dados de plano quando o cliente é REALMENTE assinante.
+  const assinanteBool = (assinatura as { assinante?: boolean }).assinante === true;
+  const statusAss = String((assinatura as { status_assinatura?: string }).status_assinatura || "").toLowerCase();
+  const assinaturaAtiva = assinanteBool && (statusAss === "ativo" || statusAss === "ativa");
+  const fluxoAssinante = assinaturaAtiva
+    ? "ASSINANTE ATIVO — siga o CASO 1 de <regras_assinantes>. Para o próprio assinante: direcione à página de assinante. Para terceiro: use agendar-para-terceiro."
+    : assinanteBool
+      ? `ASSINATURA ${(statusAss || "inativa").toUpperCase()} — siga o CASO 2: informe que a assinatura não está ativa e ofereça renovar OU agendar avulso.`
+      : "NÃO É ASSINANTE — siga o CASO 3: agende normalmente pelo chat como cliente avulso (preço normal). NUNCA direcione à página de assinante, NUNCA mencione fichas, NUNCA trate como assinante, mesmo que apareçam dados de plano antigo.";
+
   const servicos = Array.isArray((barbearia as { servicos_disponiveis?: unknown[] }).servicos_disponiveis)
     ? (barbearia as { servicos_disponiveis: { id: string; nome: string; preco: number; duracao: number; categoria: string }[] }).servicos_disponiveis
         .map((s) => `[ID:${s.id}] ${s.nome} | R$${s.preco} | ${s.duracao}min | ${s.categoria}`)
         .join("\n")
     : "";
 
+  // Apenas nome + especialidade. NÃO injetamos horários por dia aqui de
+  // propósito: eles ficam desatualizados e o modelo acaba apresentando horários
+  // ocupados. A disponibilidade real vem SEMPRE da tool consultar-horarios.
   const profissionais = Array.isArray((barbearia as { profissionais_disponiveis?: unknown[] }).profissionais_disponiveis)
-    ? (barbearia as { profissionais_disponiveis: { nome: string; id: string; especialidade: string; disponibilidade: { data: string; dia_semana: string; horarios_disponiveis: string[] }[] }[] }).profissionais_disponiveis
-        .map((p) =>
-          `${p.nome} [ID:${p.id}] | ${p.especialidade}\n` +
-          p.disponibilidade.map((d) =>
-            `  • ${d.data} (${d.dia_semana}): ${d.horarios_disponiveis.length > 0 ? d.horarios_disponiveis.join(", ") : "sem horários"}`
-          ).join("\n")
-        ).join("\n\n")
+    ? (barbearia as { profissionais_disponiveis: { nome: string; id: string; especialidade: string }[] }).profissionais_disponiveis
+        .map((p) => `${p.nome} [ID:${p.id}] | ${p.especialidade}`)
+        .join("\n")
     : "";
 
   const pagamentos = Array.isArray((userInfo as { formas_pagamento?: { label: string }[] }).formas_pagamento)
@@ -156,7 +178,11 @@ Seu único objetivo é ajudar clientes a agendar, consultar, remarcar ou cancela
 Data atual: ${dateStr} (${isoDate})
 Hora atual: ${timeStr}
 Dia da semana: ${weekday}
-Amanhã: ${new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(now.getTime() + 86400000))}
+
+⚠️ Para converter QUALQUER referência a dia da semana ("quinta", "próxima terça", "sábado") em data, use EXCLUSIVAMENTE a tabela abaixo. NUNCA calcule a data de cabeça — isso causa erros. Localize o dia da semana na tabela e use o YYYY-MM-DD correspondente (a próxima ocorrência a partir de hoje):
+<calendario>
+${calendario}
+</calendario>
 </datetime>
 
 <cliente>
@@ -167,13 +193,15 @@ Amanhã: ${new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(no
   Bloqueado: ${String((cliente as { bloqueado?: boolean }).bloqueado || false)}
 
   <assinatura>
-    É assinante: ${String((assinatura as { assinante?: boolean }).assinante || false)}
+    ⚠️ VEREDITO (use este, não interprete por conta própria): ${fluxoAssinante}
+    É assinante: ${assinanteBool}${assinanteBool ? `
     Plano: ${String((assinatura as { plano_nome?: string }).plano_nome || "")}
     Tipo: ${String((assinatura as { plano_tipo?: string }).plano_tipo || "")}
-    Status: ${String((assinatura as { status_assinatura?: string }).status_assinatura || "")}
+    Status: ${statusAss}
     Vencimento: ${String((assinatura as { data_vencimento?: string }).data_vencimento || "")}
     Dias para vencer: ${String((assinatura as { dias_para_vencimento?: number }).dias_para_vencimento || "")}
-    Renovação automática: ${String((assinatura as { renovacao_automatica?: boolean }).renovacao_automatica || false)}
+    Renovação automática: ${String((assinatura as { renovacao_automatica?: boolean }).renovacao_automatica || false)}` : `
+    (cliente avulso — sem plano ativo; ignore quaisquer dados de plano antigo)`}
   </assinatura>
 
   <fichas>
@@ -241,10 +269,9 @@ ${servicos}
 </servicos_disponiveis>
 
 <profissionais_disponiveis>
-⚠️ ATENÇÃO: estes dados foram carregados no início da conversa e podem estar desatualizados.
-USE esta lista SOMENTE para saber quais profissionais existem no estabelecimento.
-NUNCA use os horários aqui listados para confirmar disponibilidade — eles podem já estar ocupados.
-SEMPRE chame a tool consultar-horarios antes de apresentar qualquer horário ao cliente.
+Esta lista serve SOMENTE para saber quais profissionais existem no estabelecimento.
+Para saber dias e horários em que cada um atende, SEMPRE chame a tool consultar-horarios — ela retorna a disponibilidade real por profissional para a data pedida.
+NUNCA invente ou suponha horários: se ainda não chamou consultar-horarios, chame antes de responder.
 ${profissionais}
 </profissionais_disponiveis>
 
@@ -260,7 +287,9 @@ ${profissionais}
 <regras_assinantes>
 ⚠️ REGRA PRIORITÁRIA — execute ANTES de qualquer fluxo de agendamento:
 
-Sempre que o cliente demonstrar interesse em agendar (ex: "quero cortar", "tem horário", "quero marcar", "quando tem vaga" etc.), verifique IMEDIATAMENTE o bloco <assinatura> acima antes de responder sobre horários ou serviços.
+O bloco <assinatura> acima já traz um VEREDITO pronto indicando qual CASO seguir. OBEDEÇA o VEREDITO — não reclassifique o cliente por conta própria a partir de plano_nome, vencimento ou histórico. Se o VEREDITO disser "NÃO É ASSINANTE", trate como cliente avulso comum mesmo que existam dados de um plano antigo.
+
+Sempre que o cliente demonstrar interesse em agendar (ex: "quero cortar", "tem horário", "quero marcar", "quando tem vaga" etc.), siga o VEREDITO do bloco <assinatura> antes de responder sobre horários ou serviços.
 
 ━━━ CASO 1: assinante = true E status_assinatura = ativo ━━━
 → Primeiro identifique: o agendamento é para o PRÓPRIO assinante ou para OUTRA PESSOA?
@@ -419,9 +448,10 @@ Faltam informações:
 </fluxo_parcial>
 
 <interpretacao_datas>
-- hoje → data atual
-- amanhã → +1 dia
-- dias da semana → próxima ocorrência → converter para YYYY-MM-DD
+- hoje → data atual (ver <datetime>)
+- amanhã → linha marcada "← AMANHÃ" no <calendario>
+- dias da semana ("quinta", "próxima terça", "sábado") → localize o dia no <calendario> e use o YYYY-MM-DD correspondente. NUNCA calcule de cabeça.
+- ao confirmar uma data ao cliente, cite o dia da semana EXATAMENTE como está no <calendario> para a data — nunca deduza.
 - "2h da tarde" → "14:00" | "meio-dia" → "12:00" | sempre HH:MM
 </interpretacao_datas>
 </fluxos_atendimento>
