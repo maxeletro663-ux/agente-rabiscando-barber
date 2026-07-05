@@ -3,6 +3,109 @@ import { callFunction, getCustomerContext } from "./services/supabase";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
+const TZ = "America/Sao_Paulo";
+// Chaves SEM acento — mesmo formato de horarios_por_dia retornado pela edge function
+const DIAS_KEYS = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"];
+const DIAS_NOMES = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+
+type HorarioDia = { fechado?: boolean; abertura?: string; fechamento?: string };
+
+// Dia da semana de uma data YYYY-MM-DD, determinístico (independe do fuso do servidor)
+function dayIndexOf(isoDate: string): number {
+  return new Date(isoDate + "T12:00:00Z").getUTCDay();
+}
+
+function getHorariosPorDia(userInfo: Record<string, unknown>): Record<string, HorarioDia> {
+  const h = (userInfo as { horarios_por_dia?: Record<string, HorarioDia> }).horarios_por_dia;
+  return h && typeof h === "object" ? h : {};
+}
+
+// Blindagem determinística: se a data cai em dia fechado da barbearia, retorna a
+// resposta CLOSED_DAY localmente (mesmo shape da edge function), sem chamar a API.
+// Retorna null se o dia está aberto ou se não há dados para validar.
+export function closedDayGuard(
+  isoDate: unknown,
+  userInfo: Record<string, unknown>
+): Record<string, unknown> | null {
+  if (typeof isoDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return null;
+  const horarios = getHorariosPorDia(userInfo);
+  if (Object.keys(horarios).length === 0) return null; // sem dados — deixa a edge validar
+  const idx = dayIndexOf(isoDate);
+  const dia = horarios[DIAS_KEYS[idx]];
+  if (!dia || dia.fechado !== true) return null;
+  const diasAbertos = DIAS_KEYS
+    .map((k, i) => ({ k, i }))
+    .filter(({ k }) => horarios[k] && horarios[k].fechado !== true)
+    .map(({ i }) => DIAS_NOMES[i])
+    .join(", ");
+  return {
+    success: false,
+    type: "CLOSED_DAY",
+    data: isoDate,
+    dia_semana: DIAS_NOMES[idx],
+    horarios_disponiveis: [],
+    horarios_ocupados: [],
+    dias_abertos: diasAbertos,
+    message: `ATENÇÃO: A barbearia NÃO funciona na ${DIAS_NOMES[idx]}. Esta data NÃO está disponível para agendamento. Os dias de funcionamento são: ${diasAbertos}. Sugira ao cliente uma data em um destes dias.`,
+  };
+}
+
+interface ProfDisponibilidade {
+  nome: string;
+  id: string;
+  especialidade: string;
+  disponibilidade: { data: string; dia_semana: string; horarios_disponiveis: string[] }[];
+}
+
+// Se a edge function falhar, tenta deduzir a disponibilidade real pelos dados já
+// presentes no contexto (ai-customer-context traz disponibilidade por profissional).
+// Evita que uma falha técnica vire um "não tem horário" para o cliente.
+export function contextFallbackHorarios(
+  context: Record<string, unknown>,
+  profissionalId: string | undefined,
+  profissionalNome: string | undefined,
+  dataConsulta: string
+): unknown | null {
+  const barbearia = (context.barbearia || {}) as Record<string, unknown>;
+  const profs = Array.isArray(barbearia.profissionais_disponiveis)
+    ? (barbearia.profissionais_disponiveis as ProfDisponibilidade[])
+    : [];
+
+  const candidatos = profs.filter(
+    (p) =>
+      Array.isArray(p.disponibilidade) &&
+      ((profissionalId && p.id === profissionalId) ||
+        (profissionalNome && p.nome.toLowerCase().includes(profissionalNome.toLowerCase())) ||
+        (!profissionalId && !profissionalNome))
+  );
+
+  if (candidatos.length === 0) return null; // nada no contexto — não dá para inferir
+
+  const porProfissional = candidatos.map((prof) => {
+    const diaEntry = prof.disponibilidade.find((d) => d.data === dataConsulta);
+    // Data ausente da disponibilidade → profissional não trabalha nesse dia (folga)
+    // Data presente mas lista vazia → sem slots (totalmente ocupado)
+    return {
+      profissional_id: prof.id,
+      profissional_nome: prof.nome,
+      horarios_disponiveis: diaEntry ? diaEntry.horarios_disponiveis : [],
+      horarios_ocupados: [],
+    };
+  });
+
+  console.log(
+    `[consultar-horarios] fallback contexto: ${candidatos.map((p) => p.nome).join(", ")} em ${dataConsulta}`
+  );
+  return {
+    success: true,
+    data: dataConsulta,
+    horarios_disponiveis: porProfissional.flatMap((p) => p.horarios_disponiveis),
+    horarios_por_profissional: porProfissional,
+    horarios_ocupados: [],
+    _source: "context_fallback",
+  };
+}
+
 const TOOLS: Anthropic.Tool[] = [
   {
     name: "listar-servicos",
@@ -108,12 +211,11 @@ const TOOLS: Anthropic.Tool[] = [
   },
 ];
 
-function buildSystemPrompt(
+export function buildSystemPrompt(
   ctx: Record<string, unknown>,
   userInfo: Record<string, unknown>
 ): string {
   const now = new Date();
-  const TZ = "America/Sao_Paulo";
   const dateStr = now.toLocaleDateString("pt-BR", { timeZone: TZ });
   const isoDate = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(now); // YYYY-MM-DD
   const timeStr = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
@@ -121,12 +223,21 @@ function buildSystemPrompt(
 
   // Calendário pré-computado dos próximos 14 dias — evita que o modelo erre a
   // conversão de "quinta", "próxima terça" etc. para a data real (YYYY-MM-DD).
+  // Cada linha já vem anotada com aberto/fechado, para o modelo não precisar
+  // cruzar o calendário com horarios_funcionamento por conta própria.
+  const horariosPorDia = getHorariosPorDia(userInfo);
   const calendario = Array.from({ length: 14 }, (_, i) => {
     const d = new Date(now.getTime() + i * 86400000);
     const iso = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(d);
     const wd = d.toLocaleDateString("pt-BR", { weekday: "long", timeZone: TZ });
     const tag = i === 0 ? "  ← HOJE" : i === 1 ? "  ← AMANHÃ" : "";
-    return `  ${iso} = ${wd}${tag}`;
+    const dia = horariosPorDia[DIAS_KEYS[dayIndexOf(iso)]];
+    const status = !dia
+      ? ""
+      : dia.fechado === true
+        ? "  ⛔ FECHADO — NÃO ofereça nem aceite esta data"
+        : `  (aberto ${dia.abertura || "?"}–${dia.fechamento || "?"})`;
+    return `  ${iso} = ${wd}${tag}${status}`;
   }).join("\n");
   const barbearia = (ctx as { barbearia?: Record<string, unknown> }).barbearia || {};
   const cliente = (ctx as { cliente?: Record<string, unknown> }).cliente || {};
@@ -179,7 +290,8 @@ Data atual: ${dateStr} (${isoDate})
 Hora atual: ${timeStr}
 Dia da semana: ${weekday}
 
-⚠️ Para converter QUALQUER referência a dia da semana ("quinta", "próxima terça", "sábado") em data, use EXCLUSIVAMENTE a tabela abaixo. NUNCA calcule a data de cabeça — isso causa erros. Localize o dia da semana na tabela e use o YYYY-MM-DD correspondente (a próxima ocorrência a partir de hoje):
+⚠️ Para converter QUALQUER referência a dia da semana ("quinta", "próxima terça", "sábado") em data, use EXCLUSIVAMENTE a tabela abaixo. NUNCA calcule a data de cabeça — isso causa erros. Localize o dia da semana na tabela e use o YYYY-MM-DD correspondente (a próxima ocorrência a partir de hoje).
+⚠️ Cada linha já indica se a barbearia está ABERTA ou FECHADA naquela data. Linha marcada "⛔ FECHADO" = NUNCA ofereça, sugira ou aceite essa data; informe imediatamente os dias em que a barbearia abre. Linha com "(aberto HH:MM–HH:MM)" = dia válido para agendamento dentro desse horário:
 <calendario>
 ${calendario}
 </calendario>
@@ -282,6 +394,8 @@ ${profissionais}
 - Nunca use listas numeradas nas respostas ao cliente
 - Nunca envie UUIDs ou IDs internos
 - NUNCA use markdown (**, *, _, ~) em URLs ou links — escreva os links sempre como texto puro
+- ⚠️ PENSE ANTES DE ESCREVER: sua resposta é enviada ao cliente exatamente como você escreve, dividida em mensagens por parágrafo. Decida TUDO (consultar <calendario>, verificar dias fechados) ANTES de começar o texto e escreva SOMENTE a conclusão final, em UM único parágrafo coeso.
+- NUNCA raciocine em voz alta: nada de perguntas retóricas a si mesmo ("A gente abre amanhã? Não, também fechamos!"), nada de se corrigir no meio da resposta. Se pegou uma informação errada, reescreva mentalmente — o cliente só pode ver a versão final correta.
 </tom_de_voz>
 
 <regras_assinantes>
@@ -339,6 +453,10 @@ NUNCA diga que não consegue entender áudio, que só funciona por texto ou qual
 <proibicoes>
 NUNCA faça:
 - Inventar horários, preços, serviços ou profissionais
+- Oferecer, sugerir ou aceitar data marcada como "⛔ FECHADO" no <calendario>
+- Raciocinar em voz alta, fazer pergunta retórica a si mesmo ou se corrigir no meio da resposta — decida tudo ANTES de escrever e envie só a conclusão
+- Dizer que "não há horários" quando a tool retornou erro técnico — nesse caso use a frase exata de <interpretacao_retorno_horarios>
+- Usar horarios_funcionamento ou dados do contexto para afirmar disponibilidade de horário específico — disponibilidade real vem SOMENTE de consultar-horarios
 - Confirmar ação sem success: true da tool
 - Exibir UUIDs ou IDs internos ao cliente
 - Usar nome de serviço digitado pelo cliente — sempre use o nome exato dos serviços disponíveis
@@ -418,7 +536,7 @@ Fluxo obrigatório:
 <validacao_pos_chamada>
 Após TODA chamada de tool:
 1. Verifique se o retorno contém success: true
-2. Se contiver error → informe o cliente com a mensagem do erro
+2. Se contiver error → para consultar-horarios siga <interpretacao_retorno_horarios>; para as demais tools informe que houve instabilidade e peça para tentar em instantes — NUNCA invente dados
 3. NUNCA confirme uma ação sem verificar o retorno
 
 Para agendar-rapido, agendar-para-terceiro e editar-agendamento especificamente:
@@ -448,12 +566,22 @@ Faltam informações:
 </fluxo_parcial>
 
 <interpretacao_datas>
+- cliente NÃO mencionou data → use HOJE automaticamente (ver <datetime>). Só use outra data se o cliente disser EXPLICITAMENTE: "amanhã", "sexta", "dia 15" etc. ❌ PROIBIDO perguntar "Para qual data?", "Qual dia você prefere?"
 - hoje → data atual (ver <datetime>)
 - amanhã → linha marcada "← AMANHÃ" no <calendario>
 - dias da semana ("quinta", "próxima terça", "sábado") → localize o dia no <calendario> e use o YYYY-MM-DD correspondente. NUNCA calcule de cabeça.
+- ANTES de oferecer ou aceitar qualquer data, verifique a linha dela no <calendario>: se estiver "⛔ FECHADO", NÃO prossiga — informe os dias abertos e sugira o mais próximo.
 - ao confirmar uma data ao cliente, cite o dia da semana EXATAMENTE como está no <calendario> para a data — nunca deduza.
 - "2h da tarde" → "14:00" | "meio-dia" → "12:00" | sempre HH:MM
 </interpretacao_datas>
+
+<interpretacao_retorno_horarios>
+Interprete o retorno de consultar-horarios EXATAMENTE assim:
+- retorno contém campo "error" → erro técnico; NÃO invente horários; NÃO diga que não há horários; NÃO use horarios_funcionamento como substituto. Responda SOMENTE: "Não consegui verificar os horários agora 😅 Pode tentar em instantes?" e encerre.
+- success=false com type=CLOSED_DAY → a barbearia NÃO abre nesse dia; NUNCA trate como "sem vagas". Informe os dias de funcionamento (campo dias_abertos) e sugira outra data.
+- success=true mas horarios_disponiveis vazio → dia aberto porém sem vagas (lotado ou folga do profissional). Informe e ofereça outro dia ou outro profissional.
+- success=true com horários → prossiga normalmente oferecendo APENAS os horários retornados.
+</interpretacao_retorno_horarios>
 </fluxos_atendimento>
 
 <planos_assinaturas>
@@ -496,7 +624,9 @@ async function executeTool(
   toolName: string,
   input: Record<string, unknown>,
   userId: string,
-  clienteWhatsapp: string
+  clienteWhatsapp: string,
+  context: Record<string, unknown>,
+  userInfo: Record<string, unknown>
 ): Promise<unknown> {
   const base = { action: toolName, user_id: userId };
 
@@ -505,15 +635,36 @@ async function executeTool(
     case "listar-profissionais":
       return callFunction("ai-agent-appointments", base);
 
-    case "consultar-horarios":
-      return callFunction("ai-agent-appointments", {
-        ...base,
-        data: {
-          data_consulta: input.data_consulta,
-          profissional_id: input.profissional_id,
-          profissional_nome: input.profissional_nome,
-        },
-      });
+    case "consultar-horarios": {
+      const closed = closedDayGuard(input.data_consulta, userInfo);
+      if (closed) return closed;
+      try {
+        return await callFunction("ai-agent-appointments", {
+          ...base,
+          data: {
+            data_consulta: input.data_consulta,
+            profissional_id: input.profissional_id,
+            profissional_nome: input.profissional_nome,
+          },
+        });
+      } catch (err) {
+        const ax = err as { response?: { status?: number; data?: unknown }; message?: string };
+        console.error(
+          `[consultar-horarios] FALHA status=${ax.response?.status ?? "?"} ` +
+          `body=${JSON.stringify(ax.response?.data ?? ax.message ?? err)} ` +
+          `input=${JSON.stringify({ data_consulta: input.data_consulta, profissional_id: input.profissional_id, profissional_nome: input.profissional_nome })}`
+        );
+        // Antes de retornar erro genérico, tenta deduzir disponibilidade pelo contexto
+        const fallback = contextFallbackHorarios(
+          context,
+          input.profissional_id as string | undefined,
+          input.profissional_nome as string | undefined,
+          input.data_consulta as string
+        );
+        if (fallback !== null) return fallback;
+        return { error: "Falha ao consultar horários. Não use dados do contexto como substituto." };
+      }
+    }
 
     case "consultar-agendamentos":
       return callFunction("ai-agent-appointments", {
@@ -521,14 +672,36 @@ async function executeTool(
         data: { cliente_whatsapp: clienteWhatsapp, ...input },
       });
 
-    case "agendar-rapido":
-      return callFunction("ai-agent-appointments", { ...base, data: input });
+    case "agendar-rapido": {
+      const closed = closedDayGuard(input.data, userInfo);
+      if (closed) return closed;
+      const result = await callFunction("ai-agent-appointments", { ...base, data: input }) as Record<string, unknown>;
+      return {
+        ...result,
+        _solicitado_profissional: input.profissional_nome ?? null,
+        _solicitado_servico: input.servico_nome,
+        _solicitado_data: input.data,
+        _solicitado_hora: input.hora,
+      };
+    }
 
-    case "agendar-para-terceiro":
-      return callFunction("ai-agent-appointments", { ...base, action: "criar-agendamento", data: input });
+    case "agendar-para-terceiro": {
+      const closed = closedDayGuard(input.data, userInfo);
+      if (closed) return closed;
+      const result = await callFunction("ai-agent-appointments", { ...base, action: "criar-agendamento", data: input }) as Record<string, unknown>;
+      return {
+        ...result,
+        _solicitado_profissional: input.profissional_nome ?? null,
+        _solicitado_servico: input.servico_nome,
+        _solicitado_data: input.data,
+        _solicitado_hora: input.hora,
+      };
+    }
 
     case "editar-agendamento": {
       const { appointment_id, ...rest } = input;
+      const closed = closedDayGuard(rest.data, userInfo);
+      if (closed) return closed;
       return callFunction("ai-agent-appointments", {
         ...base,
         appointment_id,
@@ -607,7 +780,9 @@ export async function runAgent(params: {
           block.name,
           block.input as Record<string, unknown>,
           userId,
-          clienteWhatsapp
+          clienteWhatsapp,
+          context,
+          userInfo
         );
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
