@@ -44,6 +44,14 @@ check("toda terça marcada (aberto 09:00–19:00)", tercas.length > 0 && tercas.
 const sabados = linhas.filter((l) => l.includes("sábado"));
 check("sábado com horário próprio 09:00–18:00", sabados.length > 0 && sabados.every((l) => l.includes("(aberto 09:00–18:00)")));
 
+// Situação de hoje pré-computada no <datetime>
+check("prompt informa SITUAÇÃO DE HOJE (aberto ou fechado)", /HOJE está (ABERTO|FECHADO)/.test(prompt));
+// Se hoje ou amanhã forem fechados, o próximo dia aberto deve vir explícito e datado
+if (prompt.includes("HOJE está FECHADO")) {
+  check("dia fechado → prompt cita próximo dia aberto com data", /Próximo dia aberto: [a-zçá-ú-]+(feira)? \(\d{4}-\d{2}-\d{2}\)/i.test(prompt));
+  check("prompt esclarece se o próximo dia aberto é ou não amanhã", prompt.includes("É amanhã") || prompt.includes("NÃO é amanhã"));
+}
+
 // Fallback de contexto
 const context = {
   barbearia: {

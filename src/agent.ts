@@ -226,12 +226,15 @@ export function buildSystemPrompt(
   // Cada linha já vem anotada com aberto/fechado, para o modelo não precisar
   // cruzar o calendário com horarios_funcionamento por conta própria.
   const horariosPorDia = getHorariosPorDia(userInfo);
-  const calendario = Array.from({ length: 14 }, (_, i) => {
+  const dias14 = Array.from({ length: 14 }, (_, i) => {
     const d = new Date(now.getTime() + i * 86400000);
     const iso = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(d);
     const wd = d.toLocaleDateString("pt-BR", { weekday: "long", timeZone: TZ });
-    const tag = i === 0 ? "  ← HOJE" : i === 1 ? "  ← AMANHÃ" : "";
     const dia = horariosPorDia[DIAS_KEYS[dayIndexOf(iso)]];
+    return { i, iso, wd, dia };
+  });
+  const calendario = dias14.map(({ i, iso, wd, dia }) => {
+    const tag = i === 0 ? "  ← HOJE" : i === 1 ? "  ← AMANHÃ" : "";
     const status = !dia
       ? ""
       : dia.fechado === true
@@ -239,6 +242,24 @@ export function buildSystemPrompt(
         : `  (aberto ${dia.abertura || "?"}–${dia.fechamento || "?"})`;
     return `  ${iso} = ${wd}${tag}${status}`;
   }).join("\n");
+
+  // Situação de hoje + próximo dia aberto pré-computados — evita que o modelo
+  // chame de "amanhã" um dia de reabertura que não é amanhã (ex.: domingo e
+  // segunda fechados → reabre terça, que NÃO é amanhã).
+  const hoje14 = dias14[0];
+  const hojeAberto = hoje14.dia ? hoje14.dia.fechado !== true : null;
+  const proximoAberto = dias14.find(({ i, dia }) => i > 0 && dia && dia.fechado !== true);
+  const situacaoHoje = hojeAberto === null
+    ? ""
+    : hojeAberto
+      ? `HOJE está ABERTO (${hoje14.dia?.abertura || "?"}–${hoje14.dia?.fechamento || "?"}).`
+      : proximoAberto
+        ? `HOJE está FECHADO (${hoje14.wd}). Próximo dia aberto: ${proximoAberto.wd} (${proximoAberto.iso}), a partir das ${proximoAberto.dia?.abertura || "?"}.${
+            proximoAberto.i === 1
+              ? " Esse dia É amanhã."
+              : ` ⚠️ Esse dia NÃO é amanhã — ao citá-lo diga "na ${proximoAberto.wd}", NUNCA "amanhã".`
+          }`
+        : `HOJE está FECHADO (${hoje14.wd}).`;
   const barbearia = (ctx as { barbearia?: Record<string, unknown> }).barbearia || {};
   const cliente = (ctx as { cliente?: Record<string, unknown> }).cliente || {};
   const assinatura = (ctx as { assinatura?: Record<string, unknown> }).assinatura || {};
@@ -289,7 +310,7 @@ Seu único objetivo é ajudar clientes a agendar, consultar, remarcar ou cancela
 Data atual: ${dateStr} (${isoDate})
 Hora atual: ${timeStr}
 Dia da semana: ${weekday}
-
+${situacaoHoje ? `⚠️ ${situacaoHoje}\n` : ""}
 ⚠️ Para converter QUALQUER referência a dia da semana ("quinta", "próxima terça", "sábado") em data, use EXCLUSIVAMENTE a tabela abaixo. NUNCA calcule a data de cabeça — isso causa erros. Localize o dia da semana na tabela e use o YYYY-MM-DD correspondente (a próxima ocorrência a partir de hoje).
 ⚠️ Cada linha já indica se a barbearia está ABERTA ou FECHADA naquela data. Linha marcada "⛔ FECHADO" = NUNCA ofereça, sugira ou aceite essa data; informe imediatamente os dias em que a barbearia abre. Linha com "(aberto HH:MM–HH:MM)" = dia válido para agendamento dentro desse horário:
 <calendario>
@@ -569,6 +590,7 @@ Faltam informações:
 - cliente NÃO mencionou data → use HOJE automaticamente (ver <datetime>). Só use outra data se o cliente disser EXPLICITAMENTE: "amanhã", "sexta", "dia 15" etc. ❌ PROIBIDO perguntar "Para qual data?", "Qual dia você prefere?"
 - hoje → data atual (ver <datetime>)
 - amanhã → linha marcada "← AMANHÃ" no <calendario>
+- a palavra "amanhã" refere-se EXCLUSIVAMENTE à data da linha "← AMANHÃ". Ao anunciar quando a barbearia reabre, copie a SITUAÇÃO DE HOJE do <datetime> — se o próximo dia aberto não for a linha ← AMANHÃ, cite-o pelo dia da semana ("na terça"), NUNCA como "amanhã"
 - dias da semana ("quinta", "próxima terça", "sábado") → localize o dia no <calendario> e use o YYYY-MM-DD correspondente. NUNCA calcule de cabeça.
 - ANTES de oferecer ou aceitar qualquer data, verifique a linha dela no <calendario>: se estiver "⛔ FECHADO", NÃO prossiga — informe os dias abertos e sugira o mais próximo.
 - ao confirmar uma data ao cliente, cite o dia da semana EXATAMENTE como está no <calendario> para a data — nunca deduza.
