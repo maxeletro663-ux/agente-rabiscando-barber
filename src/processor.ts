@@ -25,6 +25,10 @@ const historyStore = new Map<string, { msgs: Anthropic.MessageParam[]; lastAt: n
 const DEBOUNCE_WAIT_MS = 6_000;
 const HISTORY_MAX = 20; // max message pairs to keep
 
+// Modelo do agente — DeepSeek V4 Flash (migrado de Claude Haiku em 2026-07-21)
+// Provedor detectado automaticamente pelo prefixo do modelo em services/llm.ts
+const AI_MODEL = "deepseek-v4-flash";
+
 // Alias de instâncias: instâncias de teste apontam para o user_id de outra instância no Supabase
 const INSTANCE_ALIAS: Record<string, string> = {
   Ativa: "rabiscandobarber",
@@ -346,6 +350,9 @@ export async function processMessage(payload: {
       clienteNome: payload.pushName || whatsappClean,
       context,
       userInfo: userInfo as unknown as Record<string, unknown>,
+      aiModel: AI_MODEL,
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      deepseekApiKey: process.env.DEEPSEEK_API_KEY,
     });
 
     if (!agentResponse) return;

@@ -1,7 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { callFunction, getCustomerContext } from "./services/supabase";
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+import { callLLM } from "./services/llm";
 
 const TZ = "America/Sao_Paulo";
 // Chaves SEM acento — mesmo formato de horarios_por_dia retornado pela edge function
@@ -756,8 +755,11 @@ export async function runAgent(params: {
   clienteNome: string;
   context: Record<string, unknown>;
   userInfo: Record<string, unknown>;
+  aiModel?: string;
+  apiKey?: string;
+  deepseekApiKey?: string;
 }): Promise<{ text: string; newMessages: Anthropic.MessageParam[] }> {
-  const { messages, history, userId, clienteWhatsapp, context, userInfo } = params;
+  const { messages, history, userId, clienteWhatsapp, context, userInfo, aiModel = "claude-haiku-4-5-20251001", apiKey, deepseekApiKey } = params;
 
   // Cliente bloqueado: retorna imediatamente sem chamar a API
   const clienteCtx = (context.cliente || {}) as Record<string, unknown>;
@@ -776,12 +778,15 @@ export async function runAgent(params: {
     { role: "user", content: userText },
   ];
 
-  let response = await anthropic.messages.create({
-    model: "claude-haiku-4-5-20251001",
+  let response = await callLLM({
+    model: aiModel,
     max_tokens: 1024,
+    temperature: 0.3,
     system: systemPrompt,
     tools: TOOLS,
     messages: conversationMessages,
+    anthropicApiKey: apiKey,
+    deepseekApiKey,
   });
 
   // Agentic loop
@@ -822,12 +827,15 @@ export async function runAgent(params: {
     conversationMessages.push(assistantMsg);
     conversationMessages.push({ role: "user", content: toolResults });
 
-    response = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
+    response = await callLLM({
+      model: aiModel,
       max_tokens: 1024,
+      temperature: 0.3,
       system: systemPrompt,
       tools: TOOLS,
       messages: conversationMessages,
+      anthropicApiKey: apiKey,
+      deepseekApiKey,
     });
   }
 
