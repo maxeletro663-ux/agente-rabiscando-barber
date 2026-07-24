@@ -12,6 +12,8 @@ import {
   isPausedByHuman,
   setBotProcessing,
   isBotProcessing,
+  setBotEcho,
+  getBotEcho,
 } from "./services/redis";
 import { sendText, sendPresence, sendAudio, sendImage, getMediaBase64, registerInstanceKey } from "./services/evolution";
 import { transcribeAudio, textToSpeech, uploadAudio } from "./services/audio";
@@ -78,6 +80,17 @@ const BOOKING_URL_PATTERN = /https:\/\/app\.appbarberzap\.com\.br\/b\/\S+/;
 
 function normalizeJid(jid: string): string {
   return jid.replace("@s.whatsapp.net", "").replace(/\D/g, "").replace(/^55/, "");
+}
+
+// Normaliza texto pra comparação de eco (minúsculas, sem acento/pontuação)
+function normalize(s: string): string {
+  return (s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function getHistory(jid: string): Anthropic.MessageParam[] {
@@ -158,6 +171,10 @@ async function sendResponseBlocks(
   useTts: boolean
 ) {
   for (const block of blocks) {
+    // Grava o eco ANTES de enviar — o webhook fromMe pode chegar bem rápido,
+    // não dá pra confiar que o await do send() termina primeiro.
+    await setBotEcho(jid, normalize(block));
+
     // Se o bloco contém o link de agendamento, envia como imagem + caption
     const logoUrl = LOGO_URL[instance];
     if (logoUrl && BOOKING_URL_PATTERN.test(block)) {
@@ -208,10 +225,14 @@ export async function processMessage(payload: {
 
   // Mensagens enviadas da instância (fromMe)
   if (fromMe) {
-    // source === "api" → mensagem do próprio bot via REST API
-    // isBotProcessing → bot está ativo para este JID (proteção extra quando Evolution
-    //   não envia source="api" corretamente para mensagens enviadas via API)
-    const botSent = source === "api" || (await isBotProcessing(jid));
+    // Não dá pra confiar em source==="api": qualquer mensagem manual mandada
+    // pela mesma API do Evolution (painel, teste manual) chega com o mesmo
+    // source do bot — por isso nunca pausava. Compara o texto recebido com o
+    // eco da última resposta enviada pelo bot em vez disso.
+    const incoming = normalize(payload.text || "");
+    const echo = await getBotEcho(jid);
+    const isEcho = !!echo && !!incoming && echo.includes(incoming);
+    const botSent = isEcho || (await isBotProcessing(jid));
     if (!botSent && !jid.includes("@g.us")) {
       await setPausedByHuman(jid);
       console.log(`[${instance}] Intervenção humana detectada (source="${source}") para ${jid} — pausando 30 min`);
@@ -318,6 +339,7 @@ export async function processMessage(payload: {
       const greeting = GREETING_CONFIG[instance];
       if (greeting) {
         try {
+          await setBotEcho(jid, normalize(greeting.caption));
           if (greeting.imageUrl) {
             await sendImage(instance, jid, greeting.imageUrl, greeting.caption);
           } else {

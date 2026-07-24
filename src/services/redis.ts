@@ -93,3 +93,18 @@ export async function isBotProcessing(jid: string): Promise<boolean> {
   const val = await redis.get(`bot:processing:${jid}`);
   return val !== null && val !== undefined;
 }
+
+// Eco do bot — distingue IA de humano num fromMe sem depender do campo
+// "source" do Evolution (que fica ambíguo quando alguém manda mensagem manual
+// pela mesma API). Guarda o texto normalizado de cada resposta enviada; um
+// fromMe só conta como "foi o bot" se o texto bater com o último eco.
+const BOT_ECHO_TTL = 120;
+
+export async function setBotEcho(jid: string, normalizedText: string): Promise<void> {
+  await redis.set(`bot:echo:${jid}`, normalizedText.slice(0, 1500), { ex: BOT_ECHO_TTL });
+}
+
+export async function getBotEcho(jid: string): Promise<string | null> {
+  const val = await redis.get(`bot:echo:${jid}`);
+  return typeof val === "string" ? val : null;
+}
