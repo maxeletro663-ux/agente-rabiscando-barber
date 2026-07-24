@@ -138,6 +138,11 @@ async function callDeepSeek(params: {
     DEEPSEEK_BASE_URL,
     {
       model: params.model,
+      // deepseek-v4-flash roda em thinking mode por padrão, o que exige devolver
+      // reasoning_content do turno anterior sempre que houve tool_call — nosso
+      // formato de mensagem (baseado em Anthropic) não carrega esse campo, então
+      // a 2a chamada do loop agêntico quebrava com 400 (reasoning_content ausente).
+      thinking: { type: "disabled" },
       messages: toOpenAIMessages(params.messages, params.system),
       tools: toOpenAITools(params.tools),
       tool_choice: "auto",
