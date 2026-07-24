@@ -49,6 +49,30 @@ export function closedDayGuard(
   };
 }
 
+// Veredito único de assinatura — a fonte da verdade é o boolean `assinante`.
+// Ex-assinantes vêm com plano_nome/data_vencimento residuais (do plano antigo),
+// o que confundia o modelo se ele reclassificasse por conta própria.
+function isAssinanteAtivo(ctx: Record<string, unknown>): boolean {
+  const assinatura = (ctx as { assinatura?: Record<string, unknown> }).assinatura || {};
+  const assinanteBool = (assinatura as { assinante?: boolean }).assinante === true;
+  const statusAss = String((assinatura as { status_assinatura?: string }).status_assinatura || "").toLowerCase();
+  return assinanteBool && (statusAss === "ativo" || statusAss === "ativa");
+}
+
+// Blindagem determinística: assinante ativo não pode reagendar pelo chat — as
+// sessões já vêm pré-agendadas (plano recorrente) para manter a organização da
+// agenda. Bloqueia antes de chamar a edge function, independente do que o
+// modelo decidir.
+function assinanteRescheduleGuard(context: Record<string, unknown>): Record<string, unknown> | null {
+  if (!isAssinanteAtivo(context)) return null;
+  return {
+    success: false,
+    type: "SUBSCRIBER_RESCHEDULE_BLOCKED",
+    message:
+      "Assinantes não podem reagendar pelo chat — as sessões já vêm pré-agendadas para manter a organização da agenda. Explique isso educadamente ao cliente e, se ele realmente precisar mudar, oriente a falar diretamente com a barbearia.",
+  };
+}
+
 interface ProfDisponibilidade {
   nome: string;
   id: string;
@@ -268,13 +292,11 @@ export function buildSystemPrompt(
   const preferencias = (ctx as { preferencias?: Record<string, unknown> }).preferencias || {};
   const metricas = (ctx as { metricas_ia?: Record<string, unknown> }).metricas_ia || {};
 
-  // Veredito único de assinatura — a fonte da verdade é o boolean `assinante`.
-  // Ex-assinantes vêm com plano_nome/data_vencimento residuais (do plano antigo),
-  // o que confundia o modelo. Aqui resolvemos o fluxo no código e só mostramos os
-  // dados de plano quando o cliente é REALMENTE assinante.
+  // Resolvido no código (não pelo modelo) para não reclassificar assinante por
+  // conta própria a partir de dados residuais de plano antigo.
   const assinanteBool = (assinatura as { assinante?: boolean }).assinante === true;
   const statusAss = String((assinatura as { status_assinatura?: string }).status_assinatura || "").toLowerCase();
-  const assinaturaAtiva = assinanteBool && (statusAss === "ativo" || statusAss === "ativa");
+  const assinaturaAtiva = isAssinanteAtivo(ctx);
   const fluxoAssinante = assinaturaAtiva
     ? "ASSINANTE ATIVO — siga o CASO 1 de <regras_assinantes>. Para o próprio assinante: direcione à página de assinante. Para terceiro: use agendar-para-terceiro."
     : assinanteBool
@@ -454,6 +476,7 @@ SE FOR PARA OUTRA PESSOA (filho, esposa, familiar, amigo etc.):
 ━━━ REGRAS ADICIONAIS PARA ASSINANTES ATIVOS ━━━
 → Sexta ou sábado: assinantes não são atendidos nestes dias — informe e sugira outro dia
 → plano_tipo = recorrente: horários já garantidos automaticamente — não crie agendamento manual
+→ ⛔ Assinante ativo NÃO PODE reagendar pelo chat: as sessões já vêm pré-agendadas para manter a organização da agenda. Se pedir para mudar dia/horário de uma sessão, NÃO chame editar-agendamento — explique educadamente que assinantes não podem reagendar por esse motivo e, se for realmente necessário, oriente a falar diretamente com a barbearia.
 </regras_assinantes>
 
 <comportamento_inteligente>
@@ -526,7 +549,9 @@ Respostas: success:true → verifique com consultar-agendamentos antes de confir
 </tool>
 
 <tool name="editar-agendamento">
-Fluxo obrigatório:
+⛔ Assinante ativo (veredito CASO 1 em <regras_assinantes>) NÃO PODE reagendar — NEM tente chamar esta tool nesse caso, explique educadamente direto. Se mesmo assim o retorno vier com type: SUBSCRIBER_RESCHEDULE_BLOCKED, use o campo message para responder ao cliente — NÃO insista, NÃO tente outro appointment_id.
+
+Fluxo obrigatório (cliente NÃO assinante ativo):
 1. Chame consultar-agendamentos para obter o appointment_id
 2. Mostre o agendamento ao cliente
 3. Se mais de um → pergunte qual alterar
@@ -720,6 +745,8 @@ async function executeTool(
     }
 
     case "editar-agendamento": {
+      const blocked = assinanteRescheduleGuard(context);
+      if (blocked) return blocked;
       const { appointment_id, ...rest } = input;
       const closed = closedDayGuard(rest.data, userInfo);
       if (closed) return closed;
