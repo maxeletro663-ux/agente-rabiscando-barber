@@ -69,7 +69,7 @@ function assinanteRescheduleGuard(context: Record<string, unknown>): Record<stri
     success: false,
     type: "SUBSCRIBER_RESCHEDULE_BLOCKED",
     message:
-      "Assinantes não podem reagendar pelo chat — as sessões já vêm pré-agendadas para manter a organização da agenda. Explique isso educadamente ao cliente e, se ele realmente precisar mudar, oriente a falar diretamente com a barbearia.",
+      "Assinantes não podem reagendar pelo chat — as sessões já vêm pré-agendadas para manter a organização da agenda. NÃO ofereça horários alternativos. Explique isso educadamente ao cliente e, se ele realmente precisar mudar, oriente a falar diretamente com a barbearia.",
   };
 }
 
@@ -625,6 +625,7 @@ Faltam informações:
 Interprete o retorno de consultar-horarios EXATAMENTE assim:
 - retorno contém campo "error" → erro técnico; NÃO invente horários; NÃO diga que não há horários; NÃO use horarios_funcionamento como substituto. Responda SOMENTE: "Não consegui verificar os horários agora 😅 Pode tentar em instantes?" e encerre.
 - success=false com type=CLOSED_DAY → a barbearia NÃO abre nesse dia; NUNCA trate como "sem vagas". Informe os dias de funcionamento (campo dias_abertos) e sugira outra data.
+- success=false com type=SUBSCRIBER_RESCHEDULE_BLOCKED → assinante ativo tentando reagendar o próprio atendimento; use o campo message para responder. NÃO ofereça horários alternativos, NÃO tente consultar-horarios de novo — encerre esse assunto educadamente.
 - success=true mas horarios_disponiveis vazio → dia aberto porém sem vagas (lotado ou folga do profissional). Informe e ofereça outro dia ou outro profissional.
 - success=true com horários → prossiga normalmente oferecendo APENAS os horários retornados.
 </interpretacao_retorno_horarios>
@@ -682,6 +683,14 @@ async function executeTool(
       return callFunction("ai-agent-appointments", base);
 
     case "consultar-horarios": {
+      // Se o assinante ativo já consultou os próprios agendamentos nesta
+      // conversa, essa consulta de horários é quase sempre pra reagendar o
+      // PRÓPRIO atendimento — bloqueia antes de oferecer horários que depois
+      // não poderão ser confirmados (editar-agendamento também bloqueia).
+      if ((context as Record<string, unknown>)._consultouAgendamentoProprio) {
+        const blocked = assinanteRescheduleGuard(context);
+        if (blocked) return blocked;
+      }
       const closed = closedDayGuard(input.data_consulta, userInfo);
       if (closed) return closed;
       try {
@@ -712,11 +721,17 @@ async function executeTool(
       }
     }
 
-    case "consultar-agendamentos":
+    case "consultar-agendamentos": {
+      // Marca que o assinante consultou os próprios agendamentos nesta
+      // conversa — usado por consultar-horarios pra detectar reagendamento.
+      if (isAssinanteAtivo(context)) {
+        (context as Record<string, unknown>)._consultouAgendamentoProprio = true;
+      }
       return callFunction("ai-agent-appointments", {
         ...base,
         data: { cliente_whatsapp: clienteWhatsapp, ...input },
       });
+    }
 
     case "agendar-rapido": {
       const closed = closedDayGuard(input.data, userInfo);
