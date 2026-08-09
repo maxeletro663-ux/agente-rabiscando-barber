@@ -59,18 +59,47 @@ function isAssinanteAtivo(ctx: Record<string, unknown>): boolean {
   return assinanteBool && (statusAss === "ativo" || statusAss === "ativa");
 }
 
-// Blindagem determinística: assinante ativo não pode reagendar pelo chat — as
-// sessões já vêm pré-agendadas (plano recorrente) para manter a organização da
+// Só o plano RECORRENTE tem sessões pré-criadas (6 meses de agendamento no
+// mesmo dia/horário) — esse é o que não pode reagendar. O plano por FICHAS não
+// tem agendamento pré-estabelecido: o cliente agenda normalmente e desconta
+// uma ficha, então não entra nesse bloqueio.
+function isAssinanteRecorrente(ctx: Record<string, unknown>): boolean {
+  if (!isAssinanteAtivo(ctx)) return false;
+  const assinatura = (ctx as { assinatura?: Record<string, unknown> }).assinatura || {};
+  const planoTipo = String((assinatura as { plano_tipo?: string }).plano_tipo || "").toLowerCase();
+  return planoTipo === "recorrente";
+}
+
+// Blindagem determinística: assinante do plano recorrente não pode reagendar
+// pelo chat — as sessões já vêm pré-agendadas para manter a organização da
 // agenda. Bloqueia antes de chamar a edge function, independente do que o
 // modelo decidir.
 function assinanteRescheduleGuard(context: Record<string, unknown>): Record<string, unknown> | null {
-  if (!isAssinanteAtivo(context)) return null;
+  if (!isAssinanteRecorrente(context)) return null;
   return {
     success: false,
     type: "SUBSCRIBER_RESCHEDULE_BLOCKED",
     message:
       "Assinantes não podem reagendar pelo chat — as sessões já vêm pré-agendadas para manter a organização da agenda. NÃO ofereça horários alternativos. Explique isso educadamente ao cliente e, se ele realmente precisar mudar, oriente a falar diretamente com a barbearia.",
   };
+}
+
+// Blindagem determinística: nunca deixa passar um nome vazio ou genérico pro
+// agendamento. Campo obrigatório demais fica tentador pro modelo "inventar"
+// algo como "Cliente" só pra completar a chamada em vez de perguntar.
+const NOME_GENERICO_REGEX = /^(cliente|cliente novo|novo cliente|usu[aá]rio|desconhecido|sem nome|n\/?a|test[e]?)$/i;
+
+function nomeGenericoGuard(nome: unknown): Record<string, unknown> | null {
+  const n = String(nome ?? "").trim();
+  if (!n || NOME_GENERICO_REGEX.test(n)) {
+    return {
+      success: false,
+      type: "MISSING_CLIENT_NAME",
+      message:
+        "O nome do cliente está vazio ou é um placeholder genérico (ex: 'Cliente'). NÃO chame esta tool com um nome inventado — pergunte o nome real do cliente antes de agendar.",
+    };
+  }
+  return null;
 }
 
 interface ProfDisponibilidade {
@@ -297,8 +326,11 @@ export function buildSystemPrompt(
   const assinanteBool = (assinatura as { assinante?: boolean }).assinante === true;
   const statusAss = String((assinatura as { status_assinatura?: string }).status_assinatura || "").toLowerCase();
   const assinaturaAtiva = isAssinanteAtivo(ctx);
+  const assinanteRecorrente = isAssinanteRecorrente(ctx);
   const fluxoAssinante = assinaturaAtiva
-    ? "ASSINANTE ATIVO — siga o CASO 1 de <regras_assinantes>. Para o próprio assinante: direcione à página de assinante. Para terceiro: use agendar-para-terceiro."
+    ? assinanteRecorrente
+      ? "ASSINANTE ATIVO (plano RECORRENTE) — siga o CASO 1 de <regras_assinantes>. Para o próprio assinante: direcione à página de assinante (sessões já pré-agendadas, NÃO agende nem reagende manualmente). Para terceiro: use agendar-para-terceiro."
+      : "ASSINANTE ATIVO (plano por FICHAS) — siga o CASO 1 de <regras_assinantes>. Para o próprio assinante: agende normalmente pelo chat com agendar-rapido (ficha descontada automaticamente pelo sistema). Para terceiro: use agendar-para-terceiro."
     : assinanteBool
       ? `ASSINATURA ${(statusAss || "inativa").toUpperCase()} — siga o CASO 2: informe que a assinatura não está ativa e ofereça renovar OU agendar avulso.`
       : "NÃO É ASSINANTE — siga o CASO 3: agende normalmente pelo chat como cliente avulso (preço normal). NUNCA direcione à página de assinante, NUNCA mencione fichas, NUNCA trate como assinante, mesmo que apareçam dados de plano antigo.";
@@ -450,9 +482,14 @@ Sempre que o cliente demonstrar interesse em agendar (ex: "quero cortar", "tem h
 ━━━ CASO 1: assinante = true E status_assinatura = ativo ━━━
 → Primeiro identifique: o agendamento é para o PRÓPRIO assinante ou para OUTRA PESSOA?
 
-SE FOR PARA O PRÓPRIO ASSINANTE:
-→ NÃO prossiga com agendamento manual
-→ Diga: "Como assinante, é só acessar ${String((barbearia as { booking_url?: string }).booking_url || "")}, clicar em *Serviço Assinantes*, colocar seu número e escolher a data e horário 😊"
+SE FOR PARA O PRÓPRIO ASSINANTE, verifique plano_tipo:
+
+  → plano_tipo = RECORRENTE (sessões já pré-agendadas, 6 meses, mesmo dia/horário):
+  → NÃO prossiga com agendamento manual
+  → Diga: "Como assinante, é só acessar ${String((barbearia as { booking_url?: string }).booking_url || "")}, clicar em *Serviço Assinantes*, colocar seu número e escolher a data e horário 😊"
+
+  → plano_tipo diferente de RECORRENTE (plano por FICHAS, sem sessão pré-agendada):
+  → Agende normalmente pelo chat, igual um cliente avulso: confirme disponibilidade com consultar-horarios e use agendar-rapido — a ficha é descontada automaticamente pelo sistema, não precisa mencionar isso ao cliente nem calcular manualmente
 
 SE FOR PARA OUTRA PESSOA (filho, esposa, familiar, amigo etc.):
 → É agendamento AVULSO — preço normal, SEM consumir ficha
@@ -476,7 +513,8 @@ SE FOR PARA OUTRA PESSOA (filho, esposa, familiar, amigo etc.):
 ━━━ REGRAS ADICIONAIS PARA ASSINANTES ATIVOS ━━━
 → Sexta ou sábado: assinantes não são atendidos nestes dias — informe e sugira outro dia
 → plano_tipo = recorrente: horários já garantidos automaticamente — não crie agendamento manual
-→ ⛔ Assinante ativo NÃO PODE reagendar pelo chat: as sessões já vêm pré-agendadas para manter a organização da agenda. Se pedir para mudar dia/horário de uma sessão, NÃO chame editar-agendamento — explique educadamente que assinantes não podem reagendar por esse motivo e, se for realmente necessário, oriente a falar diretamente com a barbearia.
+→ ⛔ Assinante ativo do plano RECORRENTE (plano_tipo=recorrente) NÃO PODE reagendar pelo chat: as sessões já vêm pré-agendadas (6 meses, mesmo dia/horário) para manter a organização da agenda. Se pedir para mudar dia/horário de uma sessão, NÃO chame consultar-horarios nem editar-agendamento — explique educadamente que esse plano não permite reagendar e, se for realmente necessário, oriente a falar diretamente com a barbearia.
+→ Assinante ativo do plano por FICHAS (plano_tipo diferente de recorrente) NÃO tem essa restrição — agenda e reagenda normalmente pelo chat, descontando ficha como de costume.
 </regras_assinantes>
 
 <comportamento_inteligente>
@@ -524,7 +562,7 @@ Nunca chame uma tool sem ter TODOS os campos obrigatórios. Se faltar algo, perg
 <tool name="agendar-rapido">
 Dados do cliente para preencher a tool:
 - cliente_whatsapp → use cliente.whatsapp do contexto. NUNCA pergunte ao cliente.
-- cliente_nome → use cliente.nome do contexto se disponível. Só pergunte se cliente_novo=true E nome estiver vazio.
+- cliente_nome → use cliente.nome do contexto se disponível. Só pergunte se cliente_novo=true E nome estiver vazio. ⛔ NUNCA use um nome genérico/placeholder como "Cliente", "Cliente novo" ou similar pra preencher esse campo obrigatório — se não souber o nome real, PARE e pergunte antes de chamar a tool.
 
 Fluxo obrigatório antes de chamar:
 0. Se o cliente pediu um profissional específico, verifique IMEDIATAMENTE se o nome existe (mesmo que parcialmente) em <profissionais_disponiveis>. Se não existir → informe que não há esse profissional e liste os disponíveis. NÃO continue o fluxo.
@@ -549,9 +587,9 @@ Respostas: success:true → verifique com consultar-agendamentos antes de confir
 </tool>
 
 <tool name="editar-agendamento">
-⛔ Assinante ativo (veredito CASO 1 em <regras_assinantes>) NÃO PODE reagendar — NEM tente chamar esta tool nesse caso, explique educadamente direto. Se mesmo assim o retorno vier com type: SUBSCRIBER_RESCHEDULE_BLOCKED, use o campo message para responder ao cliente — NÃO insista, NÃO tente outro appointment_id.
+⛔ Assinante ativo do plano RECORRENTE (plano_tipo=recorrente — veredito CASO 1 em <regras_assinantes>) NÃO PODE reagendar — NEM tente chamar esta tool nesse caso, explique educadamente direto. Assinante do plano por FICHAS pode reagendar normalmente, siga o fluxo abaixo. Se mesmo assim o retorno vier com type: SUBSCRIBER_RESCHEDULE_BLOCKED, use o campo message para responder ao cliente — NÃO insista, NÃO tente outro appointment_id.
 
-Fluxo obrigatório (cliente NÃO assinante ativo):
+Fluxo obrigatório (cliente NÃO assinante do plano recorrente):
 1. Chame consultar-agendamentos para obter o appointment_id
 2. Mostre o agendamento ao cliente
 3. Se mais de um → pergunte qual alterar
@@ -582,6 +620,7 @@ Fluxo obrigatório:
 Após TODA chamada de tool:
 1. Verifique se o retorno contém success: true
 2. Se contiver error → para consultar-horarios siga <interpretacao_retorno_horarios>; para as demais tools informe que houve instabilidade e peça para tentar em instantes — NUNCA invente dados
+2a. Se vier type: MISSING_CLIENT_NAME (agendar-rapido/agendar-para-terceiro) → NÃO é instabilidade. Pergunte o nome real do cliente e só chame a tool de novo depois que ele responder.
 3. NUNCA confirme uma ação sem verificar o retorno
 
 Para agendar-rapido, agendar-para-terceiro e editar-agendamento especificamente:
@@ -722,9 +761,11 @@ async function executeTool(
     }
 
     case "consultar-agendamentos": {
-      // Marca que o assinante consultou os próprios agendamentos nesta
-      // conversa — usado por consultar-horarios pra detectar reagendamento.
-      if (isAssinanteAtivo(context)) {
+      // Marca que o assinante (plano recorrente) consultou os próprios
+      // agendamentos nesta conversa — usado por consultar-horarios pra
+      // detectar reagendamento. Assinante por fichas fica de fora: pra ele
+      // isso é uma consulta normal antes de um agendamento comum.
+      if (isAssinanteRecorrente(context)) {
         (context as Record<string, unknown>)._consultouAgendamentoProprio = true;
       }
       return callFunction("ai-agent-appointments", {
@@ -734,6 +775,8 @@ async function executeTool(
     }
 
     case "agendar-rapido": {
+      const nomeBlocked = nomeGenericoGuard(input.cliente_nome);
+      if (nomeBlocked) return nomeBlocked;
       const closed = closedDayGuard(input.data, userInfo);
       if (closed) return closed;
       const result = await callFunction("ai-agent-appointments", { ...base, data: input }) as Record<string, unknown>;
@@ -747,6 +790,8 @@ async function executeTool(
     }
 
     case "agendar-para-terceiro": {
+      const nomeBlocked = nomeGenericoGuard(input.cliente_nome);
+      if (nomeBlocked) return nomeBlocked;
       const closed = closedDayGuard(input.data, userInfo);
       if (closed) return closed;
       const result = await callFunction("ai-agent-appointments", { ...base, action: "criar-agendamento", data: input }) as Record<string, unknown>;
