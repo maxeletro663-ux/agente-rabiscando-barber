@@ -857,6 +857,7 @@ export async function runAgent(params: {
     };
   }
 
+  const tag = `[agent][${clienteWhatsapp.slice(-4)}]`;
   const userText = messages.join("\n");
   const systemPrompt = buildSystemPrompt(context, userInfo);
 
@@ -888,6 +889,9 @@ export async function runAgent(params: {
     for (const block of response.content) {
       if (block.type !== "tool_use") continue;
 
+      const inputPreview = JSON.stringify(block.input).slice(0, 200);
+      console.log(`${tag} tool → ${block.name}(${inputPreview})`);
+
       let result: unknown;
       try {
         result = await executeTool(
@@ -898,6 +902,7 @@ export async function runAgent(params: {
           context,
           userInfo
         );
+        console.log(`${tag} tool ← ${block.name}: ${JSON.stringify(result).slice(0, 200)}`);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         result = { error: `Falha ao executar ${block.name}: ${msg}` };
