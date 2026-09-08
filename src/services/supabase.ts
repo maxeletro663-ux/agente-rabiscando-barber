@@ -11,6 +11,12 @@ const headers = {
   "Content-Type": "application/json",
 };
 
+// A edge function responde 409/422 com um JSON rico (type, message,
+// horarios_disponiveis alternativos...). Se deixarmos o axios lançar em 4xx,
+// tudo isso se perde e o modelo só vê "Request failed with status code 409" —
+// aí ele começa a improvisar e narra o problema pro cliente. Por isso aceitamos
+// qualquer 4xx com corpo JSON e devolvemos o corpo (garantindo success:false).
+// 5xx e falha de rede continuam lançando (é instabilidade de verdade).
 export async function callFunction<T = unknown>(
   fnName: string,
   body: Record<string, unknown>
@@ -18,7 +24,17 @@ export async function callFunction<T = unknown>(
   const res = await axios.post(`${BASE}/functions/v1/${fnName}`, body, {
     headers,
     timeout: 30_000,
+    validateStatus: (status) => status < 500,
   });
+  if (res.status >= 400) {
+    const data = res.data;
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      return { success: false, ...(data as Record<string, unknown>) } as T;
+    }
+    const err = new Error(`Edge function ${fnName} respondeu ${res.status}`) as Error & { response?: unknown };
+    err.response = { status: res.status, data };
+    throw err;
+  }
   return res.data as T;
 }
 

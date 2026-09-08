@@ -158,6 +158,64 @@ export function contextFallbackHorarios(
   };
 }
 
+// Resolve servico_id a partir do nome (ou valida um id) usando a lista de
+// serviços do contexto. Sem servico_id a edge calcula a lista por fatias de
+// 30 min e um serviço de 60 min pode "caber" na lista mas dar 409 na hora
+// de agendar/editar.
+function resolveServicoId(
+  context: Record<string, unknown>,
+  servicoId: unknown,
+  servicoNome: unknown
+): string | undefined {
+  const barbearia = (context.barbearia || {}) as Record<string, unknown>;
+  const servicos = Array.isArray(barbearia.servicos_disponiveis)
+    ? (barbearia.servicos_disponiveis as { id?: string; nome?: string }[])
+    : [];
+  const id = String(servicoId ?? "").trim();
+  if (id && servicos.some((s) => s.id === id)) return id;
+  const nome = String(servicoNome ?? "").trim().toLowerCase();
+  if (!nome) return undefined;
+  const exato = servicos.find((s) => String(s.nome ?? "").toLowerCase() === nome);
+  if (exato?.id) return exato.id;
+  const parcial = servicos.filter(
+    (s) => String(s.nome ?? "").toLowerCase().includes(nome) || nome.includes(String(s.nome ?? "").toLowerCase())
+  );
+  return parcial.length === 1 ? parcial[0].id : undefined;
+}
+
+// Última linha de defesa: nada de raciocínio interno, código de erro ou nome
+// de tool chega ao cliente. Se a resposta final vazou algo assim, troca por
+// uma mensagem neutra e loga o texto original pra diagnóstico.
+const LEAK_PATTERNS: RegExp[] = [
+  /\berro\s*\d{3}\b/i,                                   // "erro 409", "erro 500"
+  /\b(status|c[oó]digo)\s*\d{3}\b/i,
+  /\b(tool|ferramenta|fun[cç][aã]o|edge function|api|endpoint|json|payload|webhook)\b/i,
+  /\b(consultar|listar|agendar|editar|cancelar)-[a-z-]+/i, // nomes das tools
+  /\b(servico|servi[cç]o|appointment|profissional|cliente|user)_(id|nome|whatsapp)\b/i,
+  /\bsuccess\s*[:=]/i,
+  /\b(deixa|deixe)\s+eu\s+(verificar|checar|tentar|ver)\b/i,
+  /\bvou\s+(tentar|verificar|checar)\s+(novamente|de novo|outra abordagem|outra forma)/i,
+  /\boutra abordagem\b/i,
+  /\bo retorno (da|do|de)\b/i,
+  /\bn[aã]o tenho como passar\b/i,
+  /\bfatias? de \d+ ?min/i,
+  /\bpar[aâ]metro\b/i,
+];
+
+export function sanitizeReply(text: string): { text: string; leaked: boolean } {
+  const t = (text || "").trim();
+  if (!t) return { text: "", leaked: false };
+  const leaked = LEAK_PATTERNS.some((re) => re.test(t));
+  return leaked ? { text: LEAK_FALLBACK, leaked: true } : { text: t, leaked: false };
+}
+
+const LEAK_FALLBACK =
+  "Opa, tive uma instabilidade aqui pra concluir isso 😅 Pode me dizer de novo o que você precisa? Se preferir, dá pra agendar direto pela nossa página também.";
+
+// Limite de rodadas de tool por turno. Sem isso, um retorno inesperado pode
+// virar tentativa atrás de tentativa até o modelo desistir narrando o problema.
+const MAX_TOOL_ROUNDS = 8;
+
 const TOOLS: Anthropic.Tool[] = [
   {
     name: "listar-servicos",
@@ -171,13 +229,15 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "consultar-horarios",
-    description: "Consulta horários disponíveis para uma data específica.",
+    description: "Consulta horários disponíveis para uma data específica. SEMPRE informe servico_nome (ou servico_id) quando já souber o serviço — sem ele a lista vem em fatias de 30 min e um serviço mais longo pode não caber no horário.",
     input_schema: {
       type: "object" as const,
       properties: {
         data_consulta: { type: "string", description: "Data no formato YYYY-MM-DD" },
         profissional_id: { type: "string", description: "UUID do profissional (opcional)" },
         profissional_nome: { type: "string", description: "Nome do profissional (opcional, alternativa ao ID)" },
+        servico_nome: { type: "string", description: "Nome EXATO do serviço (de servicos_disponiveis) — para receber só os horários em que o serviço cabe inteiro" },
+        servico_id: { type: "string", description: "ID do serviço (alternativa a servico_nome)" },
       },
       required: ["data_consulta"],
     },
@@ -470,6 +530,7 @@ ${profissionais}
 - NUNCA use markdown (**, *, _, ~) em URLs ou links — escreva os links sempre como texto puro
 - ⚠️ PENSE ANTES DE ESCREVER: sua resposta é enviada ao cliente exatamente como você escreve, dividida em mensagens por parágrafo. Decida TUDO (consultar <calendario>, verificar dias fechados) ANTES de começar o texto e escreva SOMENTE a conclusão final, em UM único parágrafo coeso.
 - NUNCA raciocine em voz alta: nada de perguntas retóricas a si mesmo ("A gente abre amanhã? Não, também fechamos!"), nada de se corrigir no meio da resposta. Se pegou uma informação errada, reescreva mentalmente — o cliente só pode ver a versão final correta.
+- ⛔ O cliente NÃO sabe que existem tools, retornos, campos ou erros. NUNCA escreva pra ele coisas como "erro 409", "conflito", "a edição está retornando erro", "deixa eu verificar", "vou tentar outra abordagem", "não tenho como passar o servico_id", "o retorno da consulta indicou". Se algo deu errado, diga em UMA frase simples o que o cliente precisa saber (ex.: "Esse horário não comporta o serviço 😅 Tenho 14:00 ou 15:30, qual prefere?") e pare.
 </tom_de_voz>
 
 <regras_assinantes>
@@ -536,6 +597,8 @@ NUNCA faça:
 - Inventar horários, preços, serviços ou profissionais
 - Oferecer, sugerir ou aceitar data marcada como "⛔ FECHADO" no <calendario>
 - Raciocinar em voz alta, fazer pergunta retórica a si mesmo ou se corrigir no meio da resposta — decida tudo ANTES de escrever e envie só a conclusão
+- Mencionar ao cliente código de erro, nome de tool, nome de campo (servico_id, appointment_id), "retorno", "API", "sistema retornou" ou qualquer detalhe técnico — traduza sempre para linguagem de cliente
+- Insistir na mesma operação depois de um retorno com success: false — leia o campo message, responda ao cliente e pare
 - Dizer que "não há horários" quando a tool retornou erro técnico — nesse caso use a frase exata de <interpretacao_retorno_horarios>
 - Usar horarios_funcionamento ou dados do contexto para afirmar disponibilidade de horário específico — disponibilidade real vem SOMENTE de consultar-horarios
 - Confirmar ação sem success: true da tool
@@ -566,7 +629,7 @@ Dados do cliente para preencher a tool:
 
 Fluxo obrigatório antes de chamar:
 0. Se o cliente pediu um profissional específico, verifique IMEDIATAMENTE se o nome existe (mesmo que parcialmente) em <profissionais_disponiveis>. Se não existir → informe que não há esse profissional e liste os disponíveis. NÃO continue o fluxo.
-1. Chame consultar-horarios para confirmar disponibilidade em tempo real
+1. Chame consultar-horarios para confirmar disponibilidade em tempo real — SEMPRE passe servico_nome (nome exato do serviço), senão a lista não considera a duração e o horário pode não caber
 2. Confirme serviço + data + hora estão disponíveis no retorno da tool
 3. Use o nome EXATO do serviço da seção servicos_disponiveis
 4. Use o nome EXATO do profissional da seção profissionais_disponiveis
@@ -594,7 +657,7 @@ Fluxo obrigatório (cliente NÃO assinante do plano recorrente):
 2. Mostre o agendamento ao cliente
 3. Se mais de um → pergunte qual alterar
 4. Confirme o que será alterado
-5. Chame consultar-horarios para verificar disponibilidade em tempo real da nova data/hora
+5. Chame consultar-horarios para verificar disponibilidade em tempo real da nova data/hora — passe servico_nome com o serviço do agendamento (veio em consultar-agendamentos) e profissional_nome, para a lista já considerar a duração
 6. Se o horário não constar → informe e sugira os disponíveis
 7. Envie APENAS os campos que mudam
 8. Chame a tool editar-agendamento
@@ -621,6 +684,8 @@ Após TODA chamada de tool:
 1. Verifique se o retorno contém success: true
 2. Se contiver error → para consultar-horarios siga <interpretacao_retorno_horarios>; para as demais tools informe que houve instabilidade e peça para tentar em instantes — NUNCA invente dados
 2a. Se vier type: MISSING_CLIENT_NAME (agendar-rapido/agendar-para-terceiro) → NÃO é instabilidade. Pergunte o nome real do cliente e só chame a tool de novo depois que ele responder.
+2b. Se vier success: false com type: SLOT_UNAVAILABLE ou TIME_CONFLICT (agendar-rapido/agendar-para-terceiro/editar-agendamento) → o horário não comporta o serviço. NÃO é instabilidade e NÃO tente de novo com o mesmo horário. Diga ao cliente que esse horário não está disponível e ofereça SOMENTE os horários do campo horarios_disponiveis desse retorno (ou, se vier vazio, outro dia). Uma frase, sem explicar o motivo técnico.
+2c. Se vier type: TECH_ERROR → responda exatamente o texto indicado no campo message e encerre. NÃO tente de novo, NÃO explique.
 3. NUNCA confirme uma ação sem verificar o retorno
 
 Para agendar-rapido, agendar-para-terceiro e editar-agendamento especificamente:
@@ -732,6 +797,7 @@ async function executeTool(
       }
       const closed = closedDayGuard(input.data_consulta, userInfo);
       if (closed) return closed;
+      const servicoId = resolveServicoId(context, input.servico_id, input.servico_nome);
       try {
         return await callFunction("ai-agent-appointments", {
           ...base,
@@ -739,6 +805,7 @@ async function executeTool(
             data_consulta: input.data_consulta,
             profissional_id: input.profissional_id,
             profissional_nome: input.profissional_nome,
+            ...(servicoId ? { servico_id: servicoId } : {}),
           },
         });
       } catch (err) {
@@ -878,7 +945,12 @@ export async function runAgent(params: {
   });
 
   // Agentic loop
+  let rounds = 0;
   while (response.stop_reason === "tool_use") {
+    if (++rounds > MAX_TOOL_ROUNDS) {
+      console.error(`${tag} loop de tools excedeu ${MAX_TOOL_ROUNDS} rodadas — abortando turno`);
+      return { text: LEAK_FALLBACK, newMessages: [] };
+    }
     const assistantMsg: Anthropic.MessageParam = {
       role: "assistant",
       content: response.content,
@@ -904,9 +976,21 @@ export async function runAgent(params: {
         );
         console.log(`${tag} tool ← ${block.name}: ${JSON.stringify(result).slice(0, 200)}`);
       } catch (err: unknown) {
+        // Detalhe técnico (status, mensagem do axios) fica SÓ no log. O modelo
+        // recebe uma instrução pronta do que dizer — se ele vê "409" ou
+        // "Request failed", tende a repetir isso pro cliente.
         const msg = err instanceof Error ? err.message : String(err);
-        result = { error: `Falha ao executar ${block.name}: ${msg}` };
-        console.error(`[tool:${block.name}] erro:`, msg);
+        const ax = err as { response?: { status?: number; data?: unknown } };
+        console.error(
+          `[tool:${block.name}] erro: ${msg} status=${ax.response?.status ?? "?"} body=${JSON.stringify(ax.response?.data ?? null).slice(0, 300)}`
+        );
+        result = {
+          success: false,
+          type: "TECH_ERROR",
+          error: "Instabilidade técnica ao executar a operação.",
+          message:
+            "Houve uma instabilidade no sistema. NÃO tente de novo nem explique o problema técnico ao cliente. Responda apenas: \"Tive uma instabilidade aqui 😅 Pode tentar de novo em instantes?\" e encerre.",
+        };
       }
 
       toolResults.push({
@@ -935,7 +1019,18 @@ export async function runAgent(params: {
   conversationMessages.push({ role: "assistant", content: response.content });
 
   const textBlock = response.content.find((b) => b.type === "text");
-  const text = textBlock ? (textBlock as Anthropic.TextBlock).text : "";
+  const rawText = textBlock ? (textBlock as Anthropic.TextBlock).text : "";
+
+  const { text, leaked } = sanitizeReply(rawText);
+  if (leaked) {
+    console.error(`${tag} resposta vazou raciocínio/termo técnico — substituída. Original: ${rawText.slice(0, 500)}`);
+    // Não guarda a resposta vazada no histórico, senão o modelo continua o
+    // "raciocínio" no próximo turno a partir dela.
+    conversationMessages[conversationMessages.length - 1] = {
+      role: "assistant",
+      content: [{ type: "text", text }],
+    };
+  }
 
   // Retorna o texto e todas as mensagens do turno atual (sem o histórico anterior)
   const newMessages = conversationMessages.slice(history.length);
