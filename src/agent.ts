@@ -63,11 +63,20 @@ function isAssinanteAtivo(ctx: Record<string, unknown>): boolean {
 // mesmo dia/horário) — esse é o que não pode reagendar. O plano por FICHAS não
 // tem agendamento pré-estabelecido: o cliente agenda normalmente e desconta
 // uma ficha, então não entra nesse bloqueio.
+// Quem diz isso é `modo_utilizacao` ("recorrente" | "fichas"), escolhido na
+// contratação. `plano_tipo` é "mensal"/"quinzenal" e NUNCA vale "recorrente" —
+// de 09/08 a 07/10/2026 a trava comparava plano_tipo e não bloqueava ninguém.
 function isAssinanteRecorrente(ctx: Record<string, unknown>): boolean {
   if (!isAssinanteAtivo(ctx)) return false;
   const assinatura = (ctx as { assinatura?: Record<string, unknown> }).assinatura || {};
-  const planoTipo = String((assinatura as { plano_tipo?: string }).plano_tipo || "").toLowerCase();
-  return planoTipo === "recorrente";
+  const modo = String((assinatura as { modo_utilizacao?: string }).modo_utilizacao || "").toLowerCase();
+  if (modo) return modo === "recorrente";
+  // Contexto antigo (sem modo_utilizacao): renovação automática só existe no recorrente
+  return (assinatura as { renovacao_automatica?: boolean }).renovacao_automatica === true;
+}
+
+function modoPlanoLabel(ctx: Record<string, unknown>): string {
+  return isAssinanteRecorrente(ctx) ? "RECORRENTE" : "FICHAS";
 }
 
 // Blindagem determinística: assinante do plano recorrente não pode reagendar
@@ -443,6 +452,7 @@ ${calendario}
     É assinante: ${assinanteBool}${assinanteBool ? `
     Plano: ${String((assinatura as { plano_nome?: string }).plano_nome || "")}
     Tipo: ${String((assinatura as { plano_tipo?: string }).plano_tipo || "")}
+    Modo do plano: ${modoPlanoLabel(ctx)}
     Status: ${statusAss}
     Vencimento: ${String((assinatura as { data_vencimento?: string }).data_vencimento || "")}
     Dias para vencer: ${String((assinatura as { dias_para_vencimento?: number }).dias_para_vencimento || "")}
@@ -543,13 +553,13 @@ Sempre que o cliente demonstrar interesse em agendar (ex: "quero cortar", "tem h
 ━━━ CASO 1: assinante = true E status_assinatura = ativo ━━━
 → Primeiro identifique: o agendamento é para o PRÓPRIO assinante ou para OUTRA PESSOA?
 
-SE FOR PARA O PRÓPRIO ASSINANTE, verifique plano_tipo:
+SE FOR PARA O PRÓPRIO ASSINANTE, verifique o campo "Modo do plano" do bloco <assinatura> (NÃO use "Tipo", que é só mensal/quinzenal):
 
-  → plano_tipo = RECORRENTE (sessões já pré-agendadas, 6 meses, mesmo dia/horário):
+  → Modo do plano = RECORRENTE (sessões já pré-agendadas, 6 meses, mesmo dia/horário):
   → NÃO prossiga com agendamento manual
   → Diga: "Como assinante, é só acessar ${String((barbearia as { booking_url?: string }).booking_url || "")}, clicar em *Serviço Assinantes*, colocar seu número e escolher a data e horário 😊"
 
-  → plano_tipo diferente de RECORRENTE (plano por FICHAS, sem sessão pré-agendada):
+  → Modo do plano = FICHAS (sem sessão pré-agendada):
   → Agende normalmente pelo chat, igual um cliente avulso: confirme disponibilidade com consultar-horarios e use agendar-rapido — a ficha é descontada automaticamente pelo sistema, não precisa mencionar isso ao cliente nem calcular manualmente
 
 SE FOR PARA OUTRA PESSOA (filho, esposa, familiar, amigo etc.):
@@ -573,9 +583,9 @@ SE FOR PARA OUTRA PESSOA (filho, esposa, familiar, amigo etc.):
 
 ━━━ REGRAS ADICIONAIS PARA ASSINANTES ATIVOS ━━━
 → Sexta ou sábado: assinantes não são atendidos nestes dias — informe e sugira outro dia
-→ plano_tipo = recorrente: horários já garantidos automaticamente — não crie agendamento manual
-→ ⛔ Assinante ativo do plano RECORRENTE (plano_tipo=recorrente) NÃO PODE reagendar pelo chat: as sessões já vêm pré-agendadas (6 meses, mesmo dia/horário) para manter a organização da agenda. Se pedir para mudar dia/horário de uma sessão, NÃO chame consultar-horarios nem editar-agendamento — explique educadamente que esse plano não permite reagendar e, se for realmente necessário, oriente a falar diretamente com a barbearia.
-→ Assinante ativo do plano por FICHAS (plano_tipo diferente de recorrente) NÃO tem essa restrição — agenda e reagenda normalmente pelo chat, descontando ficha como de costume.
+→ Modo do plano = RECORRENTE: horários já garantidos automaticamente — não crie agendamento manual
+→ ⛔ Assinante ativo do plano RECORRENTE (Modo do plano = RECORRENTE) NÃO PODE reagendar pelo chat: as sessões já vêm pré-agendadas (6 meses, mesmo dia/horário) para manter a organização da agenda. Se pedir para mudar dia/horário de uma sessão, NÃO chame consultar-horarios nem editar-agendamento — explique educadamente que esse plano não permite reagendar e, se for realmente necessário, oriente a falar diretamente com a barbearia.
+→ Assinante ativo do plano por FICHAS (Modo do plano = FICHAS) NÃO tem essa restrição — agenda e reagenda normalmente pelo chat, descontando ficha como de costume.
 </regras_assinantes>
 
 <comportamento_inteligente>
@@ -650,7 +660,7 @@ Respostas: success:true → verifique com consultar-agendamentos antes de confir
 </tool>
 
 <tool name="editar-agendamento">
-⛔ Assinante ativo do plano RECORRENTE (plano_tipo=recorrente — veredito CASO 1 em <regras_assinantes>) NÃO PODE reagendar — NEM tente chamar esta tool nesse caso, explique educadamente direto. Assinante do plano por FICHAS pode reagendar normalmente, siga o fluxo abaixo. Se mesmo assim o retorno vier com type: SUBSCRIBER_RESCHEDULE_BLOCKED, use o campo message para responder ao cliente — NÃO insista, NÃO tente outro appointment_id.
+⛔ Assinante ativo do plano RECORRENTE (Modo do plano = RECORRENTE — veredito CASO 1 em <regras_assinantes>) NÃO PODE reagendar — NEM tente chamar esta tool nesse caso, explique educadamente direto. Assinante do plano por FICHAS pode reagendar normalmente, siga o fluxo abaixo. Se mesmo assim o retorno vier com type: SUBSCRIBER_RESCHEDULE_BLOCKED, use o campo message para responder ao cliente — NÃO insista, NÃO tente outro appointment_id.
 
 Fluxo obrigatório (cliente NÃO assinante do plano recorrente):
 1. Chame consultar-agendamentos para obter o appointment_id
