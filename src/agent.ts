@@ -79,12 +79,13 @@ function modoPlanoLabel(ctx: Record<string, unknown>): string {
   return isAssinanteRecorrente(ctx) ? "RECORRENTE" : "FICHAS";
 }
 
-// Blindagem determinística: assinante do plano recorrente não pode reagendar
-// pelo chat — as sessões já vêm pré-agendadas para manter a organização da
-// agenda. Bloqueia antes de chamar a edge function, independente do que o
-// modelo decidir.
+// Blindagem determinística: NENHUM assinante ativo reagenda pelo chat —
+// recorrente (sessões pré-agendadas) nem fichas (decisão do Renan, 07/10/2026).
+// A diferença entre os dois fica só no agendamento NOVO: fichas agenda pelo
+// chat, recorrente é direcionado à página. Bloqueia antes de chamar a edge
+// function, independente do que o modelo decidir.
 function assinanteRescheduleGuard(context: Record<string, unknown>): Record<string, unknown> | null {
-  if (!isAssinanteRecorrente(context)) return null;
+  if (!isAssinanteAtivo(context)) return null;
   return {
     success: false,
     type: "SUBSCRIBER_RESCHEDULE_BLOCKED",
@@ -584,8 +585,8 @@ SE FOR PARA OUTRA PESSOA (filho, esposa, familiar, amigo etc.):
 ━━━ REGRAS ADICIONAIS PARA ASSINANTES ATIVOS ━━━
 → Sexta ou sábado: assinantes não são atendidos nestes dias — informe e sugira outro dia
 → Modo do plano = RECORRENTE: horários já garantidos automaticamente — não crie agendamento manual
-→ ⛔ Assinante ativo do plano RECORRENTE (Modo do plano = RECORRENTE) NÃO PODE reagendar pelo chat: as sessões já vêm pré-agendadas (6 meses, mesmo dia/horário) para manter a organização da agenda. Se pedir para mudar dia/horário de uma sessão, NÃO chame consultar-horarios nem editar-agendamento — explique educadamente que esse plano não permite reagendar e, se for realmente necessário, oriente a falar diretamente com a barbearia.
-→ Assinante ativo do plano por FICHAS (Modo do plano = FICHAS) NÃO tem essa restrição — agenda e reagenda normalmente pelo chat, descontando ficha como de costume.
+→ ⛔ NENHUM assinante ativo (RECORRENTE ou FICHAS) PODE reagendar pelo chat. Se pedir para mudar dia/horário de um atendimento já marcado, NÃO chame consultar-horarios nem editar-agendamento — explique educadamente que assinantes não remarcam pelo chat e, se for realmente necessário, oriente a falar diretamente com a barbearia.
+→ Assinante por FICHAS pode fazer agendamento NOVO pelo chat normalmente (descontando ficha), só não remarca o que já está marcado.
 </regras_assinantes>
 
 <comportamento_inteligente>
@@ -660,9 +661,9 @@ Respostas: success:true → verifique com consultar-agendamentos antes de confir
 </tool>
 
 <tool name="editar-agendamento">
-⛔ Assinante ativo do plano RECORRENTE (Modo do plano = RECORRENTE — veredito CASO 1 em <regras_assinantes>) NÃO PODE reagendar — NEM tente chamar esta tool nesse caso, explique educadamente direto. Assinante do plano por FICHAS pode reagendar normalmente, siga o fluxo abaixo. Se mesmo assim o retorno vier com type: SUBSCRIBER_RESCHEDULE_BLOCKED, use o campo message para responder ao cliente — NÃO insista, NÃO tente outro appointment_id.
+⛔ NENHUM assinante ativo (RECORRENTE ou FICHAS — veredito CASO 1 em <regras_assinantes>) PODE reagendar — NEM tente chamar esta tool nesse caso, explique educadamente direto. Se mesmo assim o retorno vier com type: SUBSCRIBER_RESCHEDULE_BLOCKED, use o campo message para responder ao cliente — NÃO insista, NÃO tente outro appointment_id.
 
-Fluxo obrigatório (cliente NÃO assinante do plano recorrente):
+Fluxo obrigatório (cliente NÃO assinante):
 1. Chame consultar-agendamentos para obter o appointment_id
 2. Mostre o agendamento ao cliente
 3. Se mais de um → pergunte qual alterar
@@ -739,7 +740,7 @@ Faltam informações:
 Interprete o retorno de consultar-horarios EXATAMENTE assim:
 - retorno contém campo "error" → erro técnico; NÃO invente horários; NÃO diga que não há horários; NÃO use horarios_funcionamento como substituto. Responda SOMENTE: "Não consegui verificar os horários agora 😅 Pode tentar em instantes?" e encerre.
 - success=false com type=CLOSED_DAY → a barbearia NÃO abre nesse dia; NUNCA trate como "sem vagas". Informe os dias de funcionamento (campo dias_abertos) e sugira outra data.
-- success=false com type=SUBSCRIBER_RESCHEDULE_BLOCKED → assinante ativo tentando reagendar o próprio atendimento; use o campo message para responder. NÃO ofereça horários alternativos, NÃO tente consultar-horarios de novo — encerre esse assunto educadamente.
+- success=false com type=SUBSCRIBER_RESCHEDULE_BLOCKED → assinante ativo (recorrente ou fichas) tentando reagendar o próprio atendimento; use o campo message para responder. NÃO ofereça horários alternativos, NÃO tente consultar-horarios de novo — encerre esse assunto educadamente.
 - success=true mas horarios_disponiveis vazio → dia aberto porém sem vagas (lotado ou folga do profissional). Informe e ofereça outro dia ou outro profissional.
 - success=true com horários → prossiga normalmente oferecendo APENAS os horários retornados.
 </interpretacao_retorno_horarios>
