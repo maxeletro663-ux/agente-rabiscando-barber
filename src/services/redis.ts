@@ -66,7 +66,6 @@ export async function markGreetingSent(jid: string): Promise<void> {
 }
 
 const HUMAN_PAUSE_TTL = 1800; // 30 minutos
-const BOT_PROCESSING_TTL = 60; // 60s — cobre latência de webhooks fromMe da Evolution
 
 export async function setPausedByHuman(jid: string): Promise<void> {
   await Promise.all([
@@ -81,30 +80,43 @@ export async function isPausedByHuman(jid: string): Promise<boolean> {
   return val !== null && val !== undefined;
 }
 
-export async function setBotProcessing(jid: string): Promise<void> {
-  await redis.set(`bot:processing:${jid}`, "1", { ex: BOT_PROCESSING_TTL });
+// Eco do bot — distingue IA de humano num fromMe sem depender do campo
+// "source" do Evolution (que fica ambíguo quando alguém manda mensagem manual
+// pela mesma API). Cada texto enviado pelo bot vira uma chave própria e um
+// fromMe só conta como "foi o bot" se o texto for EXATAMENTE igual a um eco.
+//
+// Antes havia um único eco (só a última mensagem, comparado por "contém") e
+// uma flag bot:processing de 60 s que tratava QUALQUER fromMe como bot. O
+// barbeiro quase sempre entra na conversa logo depois da resposta do bot, ou
+// manda algo curto ("ok", "bom dia") contido na resposta — nos dois casos a
+// pausa não acontecia (reclamação do Renan, 07/10/2026).
+const BOT_ECHO_TTL = 180;
+const BOT_MEDIA_TTL = 20;
+
+function hashTexto(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36) + ":" + s.length;
 }
 
-export async function clearBotProcessing(jid: string): Promise<void> {
-  await redis.del(`bot:processing:${jid}`);
+export async function setBotEcho(jid: string, normalizedText: string): Promise<void> {
+  if (!normalizedText) return;
+  await redis.set(`bot:echo:${jid}:${hashTexto(normalizedText)}`, "1", { ex: BOT_ECHO_TTL });
 }
 
-export async function isBotProcessing(jid: string): Promise<boolean> {
-  const val = await redis.get(`bot:processing:${jid}`);
+export async function isBotEcho(jid: string, normalizedText: string): Promise<boolean> {
+  if (!normalizedText) return false;
+  const val = await redis.get(`bot:echo:${jid}:${hashTexto(normalizedText)}`);
   return val !== null && val !== undefined;
 }
 
-// Eco do bot — distingue IA de humano num fromMe sem depender do campo
-// "source" do Evolution (que fica ambíguo quando alguém manda mensagem manual
-// pela mesma API). Guarda o texto normalizado de cada resposta enviada; um
-// fromMe só conta como "foi o bot" se o texto bater com o último eco.
-const BOT_ECHO_TTL = 120;
-
-export async function setBotEcho(jid: string, normalizedText: string): Promise<void> {
-  await redis.set(`bot:echo:${jid}`, normalizedText.slice(0, 1500), { ex: BOT_ECHO_TTL });
+// Áudio/imagem do bot chegam no fromMe sem texto comparável: vale uma janela
+// curta logo depois do envio.
+export async function markBotSentMedia(jid: string): Promise<void> {
+  await redis.set(`bot:media:${jid}`, "1", { ex: BOT_MEDIA_TTL });
 }
 
-export async function getBotEcho(jid: string): Promise<string | null> {
-  const val = await redis.get(`bot:echo:${jid}`);
-  return typeof val === "string" ? val : null;
+export async function botSentMediaRecently(jid: string): Promise<boolean> {
+  const val = await redis.get(`bot:media:${jid}`);
+  return val !== null && val !== undefined;
 }

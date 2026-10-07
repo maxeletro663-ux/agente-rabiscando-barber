@@ -10,10 +10,10 @@ import {
   markGreetingSent,
   setPausedByHuman,
   isPausedByHuman,
-  setBotProcessing,
-  isBotProcessing,
   setBotEcho,
-  getBotEcho,
+  isBotEcho,
+  markBotSentMedia,
+  botSentMediaRecently,
 } from "./services/redis";
 import { sendText, sendPresence, sendAudio, sendImage, getMediaBase64, registerInstanceKey } from "./services/evolution";
 import { transcribeAudio, textToSpeech, uploadAudio } from "./services/audio";
@@ -179,6 +179,7 @@ async function sendResponseBlocks(
     const logoUrl = LOGO_URL[instance];
     if (logoUrl && BOOKING_URL_PATTERN.test(block)) {
       try {
+        await markBotSentMedia(jid);
         await sendImage(instance, jid, logoUrl, block);
         continue;
       } catch {
@@ -193,6 +194,7 @@ async function sendResponseBlocks(
         if (ttsText) {
           const audioBuffer = await textToSpeech(ttsText);
           const audioUrl = await uploadAudio(audioBuffer);
+          await markBotSentMedia(jid);
           await sendAudio(instance, jid, audioUrl);
           continue;
         }
@@ -227,15 +229,13 @@ export async function processMessage(payload: {
   if (fromMe) {
     // Não dá pra confiar em source==="api": qualquer mensagem manual mandada
     // pela mesma API do Evolution (painel, teste manual) chega com o mesmo
-    // source do bot — por isso nunca pausava. Compara o texto recebido com o
-    // eco da última resposta enviada pelo bot em vez disso.
+    // source do bot. É o bot se o texto for exatamente um eco de resposta
+    // enviada; sem texto (áudio/imagem), se o bot acabou de mandar mídia.
     const incoming = normalize(payload.text || "");
-    const echo = await getBotEcho(jid);
-    const isEcho = !!echo && !!incoming && echo.includes(incoming);
-    const botSent = isEcho || (await isBotProcessing(jid));
-    if (!botSent && !jid.includes("@g.us")) {
+    const botSent = incoming ? await isBotEcho(jid, incoming) : await botSentMediaRecently(jid);
+    if (!botSent) {
       await setPausedByHuman(jid);
-      console.log(`[${instance}] Intervenção humana detectada (source="${source}") para ${jid} — pausando 30 min`);
+      console.log(`[${instance}] Intervenção humana detectada (source="${source}" type=${messageType}) para ${jid} — pausando 30 min`);
     }
     return;
   }
@@ -257,10 +257,6 @@ export async function processMessage(payload: {
   }
 
   try {
-    // Marca que o bot está processando para este JID — impede que webhooks fromMe
-    // do próprio bot (greeting, respostas) acionem setPausedByHuman erroneamente
-    await setBotProcessing(jid);
-
     let text = payload.text || "";
     let replyWithAudio = false;
 
@@ -287,6 +283,7 @@ export async function processMessage(payload: {
 
         // Se ainda sem texto, pede para o cliente enviar por escrito
         if (!text) {
+          await setBotEcho(jid, normalize("Não consegui entender o áudio 😅 Pode mandar por texto?"));
           await sendText(instance, jid, "Não consegui entender o áudio 😅 Pode mandar por texto?");
           return;
         }
@@ -341,6 +338,7 @@ export async function processMessage(payload: {
         try {
           await setBotEcho(jid, normalize(greeting.caption));
           if (greeting.imageUrl) {
+            await markBotSentMedia(jid);
             await sendImage(instance, jid, greeting.imageUrl, greeting.caption);
           } else {
             await sendText(instance, jid, greeting.caption);
@@ -394,7 +392,5 @@ export async function processMessage(payload: {
     await sendResponseBlocks(instance, jid, blocks, useTts);
   } finally {
     await releaseLock(jid);
-    // Não limpa bot:processing explicitamente — o TTL de 60s garante que webhooks
-    // fromMe das mensagens enviadas (que chegam segundos depois) não acionem pause.
   }
 }

@@ -31,6 +31,7 @@ app.post("/webhook", async (request, reply) => {
     (message?.conversation as string | undefined) ||
     (message?.extendedTextMessage as { text?: string } | undefined)?.text ||
     (message?.speechToText as string | undefined) ||
+    (message?.imageMessage as { caption?: string } | undefined)?.caption ||
     "";
 
   const hasAudio = Boolean(message?.audioMessage);
