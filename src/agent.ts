@@ -333,7 +333,27 @@ const TOOLS: Anthropic.Tool[] = [
   },
 ];
 
-export function buildSystemPrompt(
+export // Datas especiais vencem "Dias fechados" e a folga (ex.: domingos de dezembro).
+function formatDatasEspeciais(userInfo: Record<string, unknown>): string {
+  const especiais = ((userInfo as { datas_especiais?: { data: string; inicio: string; fim: string; profissional: string }[] }).datas_especiais) || [];
+  if (especiais.length === 0) return "";
+  const porData = new Map<string, string[]>();
+  for (const e of especiais) {
+    const lista = porData.get(e.data) || [];
+    lista.push(`${e.profissional} ${e.inicio}-${e.fim}`);
+    porData.set(e.data, lista);
+  }
+  const linhas = [...porData.entries()].map(([d, l]) => {
+    const wd = new Date(d + "T12:00:00Z").toLocaleDateString("pt-BR", { weekday: "long", timeZone: "UTC" });
+    const [y, m, dd] = d.split("-");
+    return `      ${dd}/${m}/${y} (${wd}): ${l.join(", ")}`;
+  }).join("\n");
+  return `    DATAS ESPECIAIS (prevalecem sobre "Dias fechados" e sobre a folga do profissional — nesses dias ATENDE):
+${linhas}
+    Se o cliente perguntar por uma dessas datas, NUNCA diga que está fechado: chame consultar-horarios com essa data. Profissional que não aparece na data especial segue a regra normal (folga/fechado).`;
+}
+
+function buildSystemPrompt(
   ctx: Record<string, unknown>,
   userInfo: Record<string, unknown>
 ): string {
@@ -517,6 +537,7 @@ ${calendario}
 ${JSON.stringify((userInfo as { horarios_por_dia?: Record<string, string> }).horarios_por_dia || {}, null, 2)}
     Dias abertos: ${String((userInfo as { dias_abertos?: string }).dias_abertos || "")}
     Dias fechados: ${String((userInfo as { dias_fechados?: string }).dias_fechados || "")}
+${formatDatasEspeciais(userInfo)}
   </horarios_funcionamento>
 </barbearia>
 

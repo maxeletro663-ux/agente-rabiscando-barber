@@ -38,6 +38,41 @@ export async function callFunction<T = unknown>(
   return res.data as T;
 }
 
+/**
+ * Datas especiais (dia com expediente próprio do profissional) dos próximos
+ * 60 dias. Elas abrem até dia em que o salão normalmente fecha (ex.: domingos
+ * de dezembro da Rabiscando, 25/11/2026) — o prompt precisa saber disso, senão
+ * a IA responde "domingo fechado" sem consultar os horários.
+ */
+export async function getDatasEspeciais(
+  userId: string
+): Promise<{ data: string; inicio: string; fim: string; profissional: string }[]> {
+  try {
+    const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+    const ate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date(Date.now() + 60 * 86400000));
+    const res = await axios.get(`${BASE}/rest/v1/profissional_datas_especiais`, {
+      headers,
+      timeout: 10_000,
+      params: {
+        select: "data,horario_inicio,horario_fim,profissionais(nome,ativo)",
+        user_id: `eq.${userId}`,
+        and: `(data.gte.${hoje},data.lte.${ate})`,
+        order: "data.asc",
+      },
+    });
+    return ((res.data as any[]) || [])
+      .filter((r) => r.profissionais?.ativo !== false)
+      .map((r) => ({
+        data: String(r.data),
+        inicio: String(r.horario_inicio || "").slice(0, 5),
+        fim: String(r.horario_fim || "").slice(0, 5),
+        profissional: String(r.profissionais?.nome || ""),
+      }));
+  } catch {
+    return [];
+  }
+}
+
 export async function getCustomerContext(
   whatsapp: string,
   userId: string
