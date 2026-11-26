@@ -32,7 +32,12 @@ app.post("/webhook", async (request, reply) => {
     (message?.extendedTextMessage as { text?: string } | undefined)?.text ||
     (message?.speechToText as string | undefined) ||
     (message?.imageMessage as { caption?: string } | undefined)?.caption ||
-    "";
+    (message?.documentMessage as { caption?: string } | undefined)?.caption ||
+    // Imagem/arquivo sem legenda (ex.: comprovante de pagamento): o agente não
+    // enxerga o conteúdo, mas precisa saber que algo foi enviado.
+    (message?.imageMessage || message?.documentMessage || message?.documentWithCaptionMessage
+      ? "[O cliente enviou uma imagem ou arquivo, sem texto. Você não consegue ver o conteúdo.]"
+      : "");
 
   const hasAudio = Boolean(message?.audioMessage);
 

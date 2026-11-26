@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { aplicarPagamentoPrevio, editarParaPeriodoGuard, promptPagamentoPrevio, type PagamentoPrevioConfig } from "./services/pagamentoPrevio";
 import { callFunction, getCustomerContext } from "./services/supabase";
 import { callLLM } from "./services/llm";
 
@@ -541,6 +542,8 @@ ${formatDatasEspeciais(userInfo)}
   </horarios_funcionamento>
 </barbearia>
 
+${promptPagamentoPrevio((userInfo as { pagamento_previo?: PagamentoPrevioConfig | null }).pagamento_previo)}
+
 <servicos_disponiveis>
 Use esta lista para identificar o serviço correto. Sempre use o nome EXATO.
 ${servicos}
@@ -881,7 +884,11 @@ async function executeTool(
       if (nomeBlocked) return nomeBlocked;
       const closed = closedDayGuard(input.data, userInfo);
       if (closed) return closed;
-      const result = await callFunction("ai-agent-appointments", { ...base, data: input }) as Record<string, unknown>;
+      const result = await aplicarPagamentoPrevio(
+        await callFunction("ai-agent-appointments", { ...base, data: input }) as Record<string, unknown>,
+        (userInfo as { pagamento_previo?: PagamentoPrevioConfig | null }).pagamento_previo,
+        input.data
+      );
       return {
         ...result,
         _solicitado_profissional: input.profissional_nome ?? null,
@@ -896,7 +903,11 @@ async function executeTool(
       if (nomeBlocked) return nomeBlocked;
       const closed = closedDayGuard(input.data, userInfo);
       if (closed) return closed;
-      const result = await callFunction("ai-agent-appointments", { ...base, action: "criar-agendamento", data: input }) as Record<string, unknown>;
+      const result = await aplicarPagamentoPrevio(
+        await callFunction("ai-agent-appointments", { ...base, action: "criar-agendamento", data: input }) as Record<string, unknown>,
+        (userInfo as { pagamento_previo?: PagamentoPrevioConfig | null }).pagamento_previo,
+        input.data
+      );
       return {
         ...result,
         _solicitado_profissional: input.profissional_nome ?? null,
@@ -912,6 +923,8 @@ async function executeTool(
       const { appointment_id, ...rest } = input;
       const closed = closedDayGuard(rest.data, userInfo);
       if (closed) return closed;
+      const pagBlocked = editarParaPeriodoGuard((userInfo as { pagamento_previo?: PagamentoPrevioConfig | null }).pagamento_previo, rest.data);
+      if (pagBlocked) return pagBlocked;
       return callFunction("ai-agent-appointments", {
         ...base,
         appointment_id,

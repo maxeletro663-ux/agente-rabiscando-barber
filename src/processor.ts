@@ -18,6 +18,7 @@ import {
 import { sendText, sendPresence, sendAudio, sendImage, getMediaBase64, registerInstanceKey } from "./services/evolution";
 import { transcribeAudio, textToSpeech, uploadAudio } from "./services/audio";
 import { getUserByInstance, getCustomerContext, getDatasEspeciais } from "./services/supabase";
+import { getPagamentoPrevio } from "./services/pagamentoPrevio";
 import { runAgent } from "./agent";
 import type Anthropic from "@anthropic-ai/sdk";
 
@@ -353,12 +354,14 @@ export async function processMessage(payload: {
     // Get customer context
     let context: Record<string, unknown> = {};
     try {
-      const [ctxRes, especiais] = await Promise.all([
+      const [ctxRes, especiais, pagPrevio] = await Promise.all([
         getCustomerContext(whatsappClean, userInfo.user_id),
         getDatasEspeciais(userInfo.user_id),
+        getPagamentoPrevio(userInfo.user_id),
       ]);
       context = ctxRes as Record<string, unknown>;
       (userInfo as unknown as Record<string, unknown>).datas_especiais = especiais;
+      (userInfo as unknown as Record<string, unknown>).pagamento_previo = pagPrevio;
     } catch (e) {
       console.error("Erro ao obter contexto do cliente:", e);
     }
