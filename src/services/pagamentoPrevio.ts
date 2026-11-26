@@ -65,6 +65,8 @@ export function promptPagamentoPrevio(cfg: PagamentoPrevioConfig | null | undefi
 - Se o cliente perguntar sobre uma data do período antes de agendar, avise logo que nessas datas o agendamento só é concluído com o pagamento antecipado por PIX.
 - Comprovante: você NÃO consegue ver imagens nem validar pagamento. Se o cliente mandar imagem/arquivo ou disser que pagou, responda que recebeu e que a confirmação chega aqui no WhatsApp assim que a barbearia conferir. NUNCA diga que o pagamento foi confirmado.
 - Quem confirma é a barbearia. Se passar do prazo sem confirmação, a reserva é liberada sozinha; se o cliente voltar depois, explique e ofereça reservar de novo (consultando os horários outra vez).
+- TROCAR HORÁRIO ou NOVO AGENDAMENTO quando o cliente JÁ TEM agendamento numa data do período: antes de qualquer tool, diga: "Para um novo agendamento é necessário um novo pagamento, porque o horário foi reservado. Deseja fazer um novo agendamento?" Só siga se ele confirmar — e aí é sempre um agendamento NOVO (fica reservado aguardando o novo pagamento). Não use editar-agendamento para datas do período.
+- CANCELAR agendamento de uma data do período: antes de chamar cancelar-agendamento, avise: "Ao cancelar o agendamento, para fazer um novo será necessário efetuar um novo pagamento!" e só cancele depois que o cliente confirmar que quer cancelar mesmo assim.
 - Assinante usando o plano não entra nessa regra.
 </pagamento_antecipado_periodo>`;
 }
@@ -124,7 +126,8 @@ export function editarParaPeriodoGuard(
     type: "PAYMENT_PERIOD_RESCHEDULE_BLOCKED",
     message:
       "Remarcação para uma data do período de pagamento antecipado não é feita por aqui. " +
-      "Explique ao cliente que, para essas datas, é preciso fazer um NOVO agendamento (que fica reservado até o pagamento ser confirmado) " +
-      "e, se quiser, cancelar o antigo. Se ele já pagou e só quer trocar o horário, oriente a falar com a barbearia.",
+      'Diga ao cliente: "Para um novo agendamento é necessário um novo pagamento, porque o horário foi reservado. Deseja fazer um novo agendamento?" ' +
+      "Se ele confirmar, crie um agendamento NOVO (ele fica reservado até o novo pagamento ser confirmado). " +
+      "O agendamento antigo continua valendo até o cliente pedir para cancelar.",
   };
 }
